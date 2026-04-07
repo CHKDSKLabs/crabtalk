@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CrabTalk</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0d1117;
+      color: #e6edf3;
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+      padding: 2.5rem;
+      width: 100%;
+      max-width: 400px;
+    }
+
+    .hero {
+      font-size: 4rem;
+      text-align: center;
+      margin-bottom: 0.5rem;
+      line-height: 1;
+    }
+
+    h1 {
+      font-size: 1.75rem;
+      font-weight: 600;
+      color: #e8851a;
+      text-align: center;
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      font-size: 0.875rem;
+      color: #8b949e;
+      text-align: center;
+      margin-bottom: 2rem;
+      line-height: 1.5;
+    }
+
+    .field {
+      margin-bottom: 1rem;
+    }
+
+    input {
+      width: 100%;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #e6edf3;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.9375rem;
+      padding: 0.625rem 0.875rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    input:focus {
+      border-color: #e8851a;
+      outline: 2px solid rgba(232, 133, 26, 0.3);
+      outline-offset: 0;
+    }
+
+    input::placeholder {
+      color: #8b949e;
+    }
+
+    button[type="submit"] {
+      width: 100%;
+      background: #e8851a;
+      border: none;
+      border-radius: 6px;
+      color: #0d1117;
+      cursor: pointer;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.9375rem;
+      font-weight: 600;
+      margin-top: 0.5rem;
+      padding: 0.625rem 0.875rem;
+      transition: background 0.15s;
+    }
+
+    button[type="submit"]:hover {
+      background: #d4760f;
+    }
+
+    .error {
+      color: #f85149;
+      font-size: 0.875rem;
+      margin-top: 0.75rem;
+      text-align: center;
+      min-height: 1.25rem;
+    }
+
+    .success-heading {
+      font-size: 1.25rem;
+      font-weight: 600;
+      text-align: center;
+      margin-bottom: 1rem;
+    }
+
+    .token-block {
+      background: #0d1117;
+      border: 1px solid #e8851a;
+      border-radius: 6px;
+      padding: 0.875rem;
+      margin-bottom: 1rem;
+      position: relative;
+    }
+
+    .token-value {
+      font-family: 'Courier New', monospace;
+      font-size: 0.8125rem;
+      color: #e6edf3;
+      word-break: break-all;
+      padding-right: 4rem;
+    }
+
+    .copy-btn {
+      position: absolute;
+      top: 0.5rem;
+      right: 0.5rem;
+      background: #30363d;
+      border: 1px solid #444c56;
+      border-radius: 4px;
+      color: #e6edf3;
+      cursor: pointer;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.75rem;
+      padding: 0.25rem 0.625rem;
+      transition: background 0.15s;
+    }
+
+    .copy-btn:hover {
+      background: #444c56;
+    }
+
+    .copy-btn.copied {
+      color: #3fb950;
+    }
+
+    .success-instruction {
+      font-size: 0.875rem;
+      color: #8b949e;
+      text-align: center;
+      line-height: 1.5;
+    }
+
+    .success-instruction code {
+      font-family: 'Courier New', monospace;
+      color: #e8851a;
+    }
+  </style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="hero">🦀</div>
+    <h1>CrabTalk</h1>
+    <p class="subtitle">Authenticate to get a session token for your Claude Code plugin.</p>
+    <form id="login-form">
+      <div class="field">
+        <input type="email" name="email" placeholder="Email" required autocomplete="email">
+      </div>
+      <div class="field">
+        <input type="password" name="password" placeholder="Password" required autocomplete="current-password">
+      </div>
+      <button type="submit">Log In</button>
+    </form>
+    <p class="error" id="error-msg"></p>
+  </div>
+
+  <script>
+    // ─── CONFIGURE BEFORE DEPLOY ──────────────────────────────
+    const API = 'https://your-signal-server.com';
+    // ──────────────────────────────────────────────────────────
+
+    const form = document.getElementById('login-form');
+    const errorMsg = document.getElementById('error-msg');
+    const card = document.getElementById('card');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errorMsg.textContent = '';
+
+      const data = new FormData(e.target);
+      let res, json;
+
+      try {
+        res = await fetch(`${API}/api/auth/sign-in/email`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: data.get('email'), password: data.get('password') }),
+          credentials: 'include',
+        });
+        json = await res.json();
+      } catch {
+        errorMsg.textContent = 'Could not reach the signal server. Check your connection.';
+        return;
+      }
+
+      if (!res.ok || !json.token) {
+        errorMsg.textContent = json.message || 'Login failed. Check your credentials.';
+        return;
+      }
+
+      showSuccess(json.token);
+    });
+
+    function showSuccess(token) {
+      card.innerHTML = `
+        <div class="hero">🦀</div>
+        <h1>CrabTalk</h1>
+        <p class="success-heading">Authenticated.</p>
+        <div class="token-block">
+          <div class="token-value" id="token-value">${token}</div>
+          <button class="copy-btn" id="copy-btn">Copy</button>
+        </div>
+        <p class="success-instruction">Copy this token into your <code>/crabtalk:setup</code> session.</p>
+      `;
+
+      document.getElementById('copy-btn').addEventListener('click', () => {
+        navigator.clipboard.writeText(token).then(() => {
+          const btn = document.getElementById('copy-btn');
+          btn.textContent = 'Copied!';
+          btn.classList.add('copied');
+          setTimeout(() => {
+            btn.textContent = 'Copy';
+            btn.classList.remove('copied');
+          }, 1500);
+        });
+      });
+    }
+  </script>
+</body>
+</html>
