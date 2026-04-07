@@ -17,6 +17,7 @@ export class PeerConnection_ {
   private remoteDeviceName: string;
 
   connected = false;
+  private offerSent = false;
 
   constructor(
     localDeviceName: string,
@@ -59,6 +60,7 @@ export class PeerConnection_ {
   }
 
   async createOffer(): Promise<void> {
+    this.offerSent = true;
     this.dc = this.pc.createDataChannel("sync");
     this.setupDataChannel(this.dc);
   }
@@ -71,7 +73,9 @@ export class PeerConnection_ {
         this.pc.setRemoteDescription(payload.sdp, DescriptionType.Offer);
         break;
       case "answer":
-        this.pc.setRemoteDescription(payload.sdp, DescriptionType.Answer);
+        if (this.offerSent) {
+          this.pc.setRemoteDescription(payload.sdp, DescriptionType.Answer);
+        }
         break;
       case "ice-candidate":
         this.pc.addRemoteCandidate(payload.candidate, payload.mid);

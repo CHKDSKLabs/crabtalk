@@ -3,9 +3,12 @@ dist/
 .env
 .env.local
 *.local.md
-mcp-server/dist/
-server/dist/
-.wrangler/
-static/.wrangler/
+mcp-server/dist/*
+server/dist/*
+.wrangler/*
+static/.wrangler/*
 server/.dev.vars
-.claude
+.claude/*
+.claude-plugin/*
+mcp-server/.claude/*
+docs/*
