@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p .claude-plugin)",
+      "Bash(mkdir -p skills/setup)",
+      "Bash(mkdir -p skills/conflicts)",
+      "Bash(mkdir -p skills/status)",
+      "Bash(mkdir -p skills/sync-guide)",
+      "mcp__plugin_context7_context7__resolve-library-id",
+      "mcp__plugin_context7_context7__query-docs",
+      "Bash(node dist/index.js)",
+      "Bash(kill %1)",
+      "Bash(wait)",
+      "Bash(node:*)",
+      "Bash(ls:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git:*)"
+    ]
+  }
+}
