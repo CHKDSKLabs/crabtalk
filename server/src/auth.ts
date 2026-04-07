@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth";
+import { bearer } from "better-auth/plugins";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { createDb } from "./db/index.js";
 import * as schema from "./db/schema.js";
@@ -9,6 +10,8 @@ export interface Env {
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;
   TRUSTED_ORIGINS: string;
+  BETTER_AUTH_SECRET: string;
+  BETTER_AUTH_URL: string;
 }
 
 export function createAuth(env: Env) {
@@ -31,5 +34,8 @@ export function createAuth(env: Env) {
       },
     },
     trustedOrigins: (env.TRUSTED_ORIGINS || "").split(",").filter(Boolean),
+    secret: env.BETTER_AUTH_SECRET,
+    baseURL: env.BETTER_AUTH_URL,
+    plugins: [bearer()],
   });
 }

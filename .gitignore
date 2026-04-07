@@ -6,4 +6,6 @@ dist/
 mcp-server/dist/
 server/dist/
 .wrangler/
+static/.wrangler/
 server/.dev.vars
+.claude

@@ -2,10 +2,9 @@
   "mcpServers": {
     "crabtalk": {
       "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp-server/dist/index.js"],
+      "args": ["C:/Users/Spork/dev/crabtalk/scripts/start.mjs"],
       "env": {
-        "CRABTALK_SIGNAL_URL": "${CRABTALK_SIGNAL_URL}",
-        "CRABTALK_AUTH_TOKEN": "${CRABTALK_AUTH_TOKEN}"
+        "CRABTALK_SIGNAL_URL": "https://claw.crabtalk.dev"
       }
     }
   }

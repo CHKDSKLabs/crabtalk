@@ -1,5 +1,5 @@
 ---
-name: CrabTalk Status
+name: crabtalk-status
 description: This skill should be used when the user asks to "check crabtalk status", "show sync status", "list connected devices", "crabtalk peers", "who's online", "last sync time", or mentions CrabTalk connection or device status.
 argument-hint: (no arguments)
 allowed-tools:
