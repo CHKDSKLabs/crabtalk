@@ -1,0 +1,20 @@
+name = "crabtalk-signal"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+# Needed for packages that use Node.js built-ins (crypto, buffer, etc.)
+compatibility_flags = ["nodejs_compat"]
+
+[[durable_objects.bindings]]
+name = "SIGNALING"
+class_name = "SignalingRoom"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["SignalingRoom"]
+
+# Set secrets via: wrangler secret put <NAME>
+# DATABASE_URL
+# GOOGLE_CLIENT_ID
+# GOOGLE_CLIENT_SECRET
+# TRUSTED_ORIGINS

@@ -6,3 +6,4 @@ dist/
 mcp-server/dist/
 server/dist/
 .wrangler/
+server/.dev.vars

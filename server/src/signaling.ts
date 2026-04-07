@@ -1,123 +1,87 @@
-import { WebSocketServer, WebSocket } from "ws";
-import { eq, and } from "drizzle-orm";
-import { db } from "./db/index.js";
+import type { Env } from "./auth.js";
+import { createDb } from "./db/index.js";
 import { peers } from "./db/schema.js";
-import { auth } from "./auth.js";
-import type { IncomingMessage } from "http";
-import type { Server } from "http";
 
-interface ConnectedPeer {
-  ws: WebSocket;
-  userId: string;
-  deviceName: string;
-}
+export class SignalingRoom implements DurableObject {
+  constructor(
+    private readonly state: DurableObjectState,
+    private readonly env: Env
+  ) {}
 
-const connectedPeers = new Map<string, ConnectedPeer>();
-
-export function setupWebSocket(server: Server): void {
-  const wss = new WebSocketServer({ server, path: "/ws" });
-
-  wss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
-    const authHeader = req.headers.authorization;
-    const deviceName = req.headers["x-device-name"] as string;
-
-    if (!authHeader || !deviceName) {
-      ws.close(4001, "Missing auth or device name");
-      return;
+  async fetch(request: Request): Promise<Response> {
+    if (request.headers.get("Upgrade") !== "websocket") {
+      return new Response("Expected websocket", { status: 426 });
     }
 
-    const token = authHeader.replace("Bearer ", "");
+    const userId = request.headers.get("X-User-Id")!;
+    const deviceName = request.headers.get("X-Device-Name")!;
 
-    let userId: string;
+    const pair = new WebSocketPair();
+    const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
+
+    // Tags: [userId, deviceName] — used to identify/route messages
+    this.state.acceptWebSocket(server, [userId, deviceName]);
+
+    // Record device registration in Neon (best-effort)
+    this.upsertPeer(userId, deviceName).catch(() => {});
+
+    this.broadcastPeerList();
+
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
     try {
-      const session = await auth.api.getSession({
-        headers: new Headers({ authorization: `Bearer ${token}` }),
-      });
-      if (!session?.user?.id) {
-        ws.close(4001, "Invalid session");
-        return;
-      }
-      userId = session.user.id;
-    } catch {
-      ws.close(4001, "Auth failed");
-      return;
-    }
+      const text = typeof message === "string" ? message : new TextDecoder().decode(message);
+      const msg = JSON.parse(text);
+      const targetDevice: string = msg.to;
 
-    // Register peer in DB
+      for (const socket of this.state.getWebSockets()) {
+        const [, sockDevice] = this.state.getTags(socket);
+        if (sockDevice === targetDevice) {
+          socket.send(JSON.stringify(msg));
+          break;
+        }
+      }
+    } catch {
+      // Malformed message — drop it
+    }
+  }
+
+  async webSocketClose(ws: WebSocket, code: number, reason: string): Promise<void> {
+    ws.close(code, reason);
+    this.broadcastPeerList();
+  }
+
+  async webSocketError(ws: WebSocket): Promise<void> {
+    ws.close(1011, "Internal error");
+    this.broadcastPeerList();
+  }
+
+  private broadcastPeerList(): void {
+    const sockets = this.state.getWebSockets();
+    const peerList = sockets.map((ws) => {
+      const [userId, deviceName] = this.state.getTags(ws);
+      return { userId, deviceName, connected: true, lastSeen: Date.now() };
+    });
+
+    const msg = JSON.stringify({ type: "peers", payload: peerList });
+
+    for (const ws of sockets) {
+      try {
+        ws.send(msg);
+      } catch {
+        // Socket already gone, move on
+      }
+    }
+  }
+
+  private async upsertPeer(userId: string, deviceName: string): Promise<void> {
+    const db = createDb(this.env.DATABASE_URL);
     const peerId = `${userId}:${deviceName}`;
     await db
       .insert(peers)
-      .values({
-        id: peerId,
-        userId,
-        deviceName,
-        lastSeen: new Date(),
-      })
-      .onConflictDoUpdate({
-        target: peers.id,
-        set: { lastSeen: new Date() },
-      });
-
-    connectedPeers.set(peerId, { ws, userId, deviceName });
-
-    // Notify all peers of this user about the updated peer list
-    broadcastPeerList(userId);
-
-    ws.on("message", (data) => {
-      try {
-        const msg = JSON.parse(data.toString());
-        const targetPeerId = `${userId}:${msg.to}`;
-        const targetPeer = connectedPeers.get(targetPeerId);
-
-        if (targetPeer && targetPeer.ws.readyState === WebSocket.OPEN) {
-          targetPeer.ws.send(JSON.stringify(msg));
-        }
-      } catch {
-        // Malformed message, ignore
-      }
-    });
-
-    ws.on("pong", () => {
-      db.update(peers)
-        .set({ lastSeen: new Date() })
-        .where(eq(peers.id, peerId))
-        .catch(() => {});
-    });
-
-    ws.on("close", () => {
-      connectedPeers.delete(peerId);
-      broadcastPeerList(userId);
-    });
-  });
-
-  // Heartbeat: detect dead connections
-  setInterval(() => {
-    for (const [id, peer] of connectedPeers) {
-      if (peer.ws.readyState !== WebSocket.OPEN) {
-        connectedPeers.delete(id);
-        broadcastPeerList(peer.userId);
-        continue;
-      }
-      peer.ws.ping();
-    }
-  }, 30_000);
-}
-
-function broadcastPeerList(userId: string): void {
-  const userPeers = Array.from(connectedPeers.values())
-    .filter((p) => p.userId === userId)
-    .map((p) => ({
-      deviceName: p.deviceName,
-      userId: p.userId,
-      lastSeen: Date.now(),
-      connected: true,
-    }));
-
-  const msg = JSON.stringify({ type: "peers", payload: userPeers });
-
-  for (const peer of connectedPeers.values()) {
-    if (peer.userId === userId && peer.ws.readyState === WebSocket.OPEN) {
-      peer.ws.send(msg);
-    }
+      .values({ id: peerId, userId, deviceName, lastSeen: new Date() })
+      .onConflictDoUpdate({ target: peers.id, set: { lastSeen: new Date() } });
   }
 }
