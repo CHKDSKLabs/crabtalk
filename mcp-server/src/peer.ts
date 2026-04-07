@@ -3,10 +3,17 @@ import type { SignalMessage, FileManifestEntry } from "./types.js";
 
 const { PeerConnection, DataChannel, DescriptionType } = nodeDataChannel;
 
+const CHUNK_SIZE = 64 * 1024; // 64KB — well under any WebRTC implementation's message size limit
+
 type SendSignal = (msg: SignalMessage) => void;
 type OnFileReceived = (path: string, content: Buffer, entry: FileManifestEntry) => void;
 type OnManifestReceived = (manifest: Map<string, FileManifestEntry>) => void;
 type OnConnected = () => void;
+
+interface InboundFile {
+  chunks: string[];
+  totalChunks: number;
+}
 
 export class PeerConnection_ {
   private pc: InstanceType<typeof PeerConnection>;
@@ -17,6 +24,7 @@ export class PeerConnection_ {
   private onConnected: OnConnected;
   private localDeviceName: string;
   private remoteDeviceName: string;
+  private inboundFiles = new Map<string, InboundFile>();
 
   connected = false;
   private offerSent = false;
@@ -98,13 +106,22 @@ export class PeerConnection_ {
 
   sendFile(path: string, content: Buffer, entry: FileManifestEntry): void {
     if (!this.dc) return;
-    const msg = JSON.stringify({
-      type: "file",
-      path,
-      entry,
-      content: content.toString("base64"),
-    });
-    this.dc.sendMessage(msg);
+
+    const base64 = content.toString("base64");
+    const totalChunks = Math.ceil(base64.length / CHUNK_SIZE) || 1;
+
+    for (let i = 0; i < totalChunks; i++) {
+      const slice = base64.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+      this.dc.sendMessage(JSON.stringify({
+        type: "file-chunk",
+        path,
+        chunkIndex: i,
+        totalChunks,
+        data: slice,
+      }));
+    }
+
+    this.dc.sendMessage(JSON.stringify({ type: "file-end", path, entry }));
   }
 
   close(): void {
@@ -134,8 +151,21 @@ export class PeerConnection_ {
         if (data.type === "manifest") {
           const manifest = new Map<string, FileManifestEntry>(data.entries);
           this.onManifestReceived(manifest);
-        } else if (data.type === "file") {
-          const content = Buffer.from(data.content, "base64");
+        } else if (data.type === "file-chunk") {
+          let inbound = this.inboundFiles.get(data.path);
+          if (!inbound) {
+            inbound = { chunks: new Array(data.totalChunks), totalChunks: data.totalChunks };
+            this.inboundFiles.set(data.path, inbound);
+          }
+          inbound.chunks[data.chunkIndex] = data.data;
+        } else if (data.type === "file-end") {
+          const inbound = this.inboundFiles.get(data.path);
+          if (!inbound) {
+            console.error(`[CrabTalk] Received file-end for ${data.path} with no chunks`);
+            return;
+          }
+          this.inboundFiles.delete(data.path);
+          const content = Buffer.from(inbound.chunks.join(""), "base64");
           this.onFileReceived(data.path, content, data.entry);
         }
       } catch (err) {
