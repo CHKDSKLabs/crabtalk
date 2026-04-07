@@ -33,10 +33,10 @@
     }
 
     .hero {
-      font-size: 4rem;
-      text-align: center;
-      margin-bottom: 0.5rem;
-      line-height: 1;
+      display: block;
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 0.5rem;
     }
 
     h1 {
@@ -232,7 +232,7 @@
 </head>
 <body>
   <div class="card" id="card">
-    <div class="hero">🦀</div>
+    <img class="hero" src="assets/CRABTALK.svg" alt="CrabTalk">
     <h1>CrabTalk</h1>
     <p class="subtitle">Authenticate to get a session token for your Claude Code plugin.</p>
     <div class="mode-toggle">
@@ -333,7 +333,7 @@
 
     function showSuccess(token) {
       card.innerHTML = `
-        <div class="hero">🦀</div>
+        <img class="hero" src="assets/CRABTALK.svg" alt="CrabTalk">
         <h1>CrabTalk</h1>
         <p class="success-heading">Authenticated.</p>
         <div class="token-block">
