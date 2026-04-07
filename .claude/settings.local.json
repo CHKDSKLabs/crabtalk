@@ -21,7 +21,8 @@
       "Bash(npm run:*)",
       "Bash(curl:*)",
       "Skill(crabtalk:status)",
-      "mcp__crabtalk__get-status"
+      "mcp__crabtalk__get-status",
+      "mcp__crabtalk__sync-now"
     ]
   }
 }
