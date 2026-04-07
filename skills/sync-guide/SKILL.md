@@ -1,5 +1,5 @@
 ---
-name: CrabTalk Sync Guide
+name: crabtalk-sync
 description: This skill should be used when the user asks "how does crabtalk work", "what does crabtalk sync", "crabtalk architecture", "crabtalk troubleshooting", "sync not working", "crabtalk help", or has questions about CrabTalk's sync mechanism, security, or behavior.
 argument-hint: (no arguments)
 allowed-tools:

@@ -26,6 +26,7 @@ export class SyncEngine {
   private conflicts: SyncConflict[] = [];
   private lastSyncTime: number | null = null;
   private pendingRemoteChanges = 0;
+  private authValid: boolean = false;
 
   constructor(config: CrabTalkConfig) {
     this.config = config;
@@ -47,6 +48,7 @@ export class SyncEngine {
   async start(): Promise<void> {
     this.localManifest = await buildManifest(this.claudeDir, this.config.syncPaths);
     this.watcher.start(this.claudeDir, this.config.syncPaths);
+    this.authValid = await this.validateAuth();
     this.signal.connect();
   }
 
@@ -63,7 +65,7 @@ export class SyncEngine {
     return {
       deviceName: this.config.deviceName,
       signalConnected: this.signal.connected,
-      authValid: true,
+      authValid: this.authValid,
       peers: this.peerInfo,
       lastSyncTime: this.lastSyncTime,
       pendingLocalChanges: 0,
@@ -111,6 +113,17 @@ export class SyncEngine {
       synced: this.localManifest.size,
       conflicts: this.conflicts.length,
     };
+  }
+
+  private async validateAuth(): Promise<boolean> {
+    try {
+      const res = await fetch(`${this.config.signalUrl}/api/auth/get-session`, {
+        headers: { Authorization: `Bearer ${this.config.authToken}` },
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
   }
 
   private async onLocalChanges(_changedPaths: string[]): Promise<void> {

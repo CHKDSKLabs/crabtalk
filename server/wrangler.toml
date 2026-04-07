@@ -4,6 +4,13 @@ compatibility_date = "2025-01-01"
 
 # Needed for packages that use Node.js built-ins (crypto, buffer, etc.)
 compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+preview_urls = false
+
+[[routes]]
+pattern = "claw.crabtalk.dev"
+zone_name = "crabtalk.dev"
+custom_domain = true
 
 [[durable_objects.bindings]]
 name = "SIGNALING"
@@ -18,3 +25,5 @@ new_classes = ["SignalingRoom"]
 # GOOGLE_CLIENT_ID
 # GOOGLE_CLIENT_SECRET
 # TRUSTED_ORIGINS
+# BETTER_AUTH_SECRET
+# BETTER_AUTH_URL

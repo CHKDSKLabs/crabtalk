@@ -1,5 +1,5 @@
 ---
-name: CrabTalk Conflicts
+name: crabtalk-conflicts
 description: This skill should be used when the user asks to "resolve crabtalk conflicts", "show sync conflicts", "fix crabtalk conflicts", "view config diffs", "crabtalk conflicts", or mentions merge conflicts from CrabTalk sync.
 argument-hint: [file path (optional)]
 allowed-tools:

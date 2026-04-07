@@ -1,5 +1,7 @@
 {
   "name": "crabtalk",
+  "repository": "https://github.com/ObtuseAglet/crabtalk",
+  "homepage": "https://crabtalk.dev",
   "version": "0.1.0",
   "description": "P2P sync for your .claude configuration across machines. Like OneDrive, but for crabs.",
   "author": {
