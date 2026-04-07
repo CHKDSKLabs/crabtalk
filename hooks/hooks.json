@@ -1,0 +1,17 @@
+{
+  "description": "CrabTalk auto-connect on session start",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/session-start.js",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
