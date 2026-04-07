@@ -1,0 +1,27 @@
+{
+  "name": "@crabtalk/signal-server",
+  "version": "0.1.0",
+  "description": "CrabTalk signal server — auth, peer discovery, WebRTC signaling",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "db:migrate": "node dist/db/migrate.js"
+  },
+  "dependencies": {
+    "better-auth": "^1.2.0",
+    "@neondatabase/serverless": "^1.0.0",
+    "drizzle-orm": "^0.39.0",
+    "ws": "^8.18.0",
+    "hono": "^4.7.0",
+    "@hono/node-server": "^1.14.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.0",
+    "drizzle-kit": "^0.30.0",
+    "typescript": "^5.7.0"
+  }
+}

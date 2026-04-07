@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "crabtalk": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp-server/dist/index.js"],
+      "env": {
+        "CRABTALK_SIGNAL_URL": "${CRABTALK_SIGNAL_URL}",
+        "CRABTALK_AUTH_TOKEN": "${CRABTALK_AUTH_TOKEN}"
+      }
+    }
+  }
+}

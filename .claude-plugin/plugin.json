@@ -1,0 +1,12 @@
+{
+  "name": "crabtalk",
+  "version": "0.1.0",
+  "description": "P2P sync for your .claude configuration across machines. Like OneDrive, but for crabs.",
+  "author": {
+    "name": "ObtuseAglet",
+    "url": "https://github.com/ObtuseAglet"
+  },
+  "license": "MIT",
+  "keywords": ["sync", "p2p", "webrtc", "configuration", "multi-device"],
+  "mcpServers": "./.mcp.json"
+}
