@@ -159,20 +159,28 @@ export class SyncEngine {
     }
   }
 
-  private createPeerConnection(remoteDeviceName: string, initiator: boolean): void {
+  private async createPeerConnection(remoteDeviceName: string, initiator: boolean): Promise<void> {
     const peer = new PeerConnection_(
       this.config.deviceName,
       remoteDeviceName,
       (msg) => this.signal.send(msg),
       (path, content, entry) => this.onFileReceived(path, content, entry, remoteDeviceName),
-      (manifest) => this.onRemoteManifest(manifest, remoteDeviceName)
+      (manifest) => this.onRemoteManifest(manifest, remoteDeviceName),
+      () => this.onPeerConnected(remoteDeviceName)
     );
 
     this.peers.set(remoteDeviceName, peer);
 
     if (initiator) {
-      peer.createOffer();
+      await peer.createOffer();
     }
+  }
+
+  private async onPeerConnected(remoteDeviceName: string): Promise<void> {
+    const peer = this.peers.get(remoteDeviceName);
+    if (!peer) return;
+    this.localManifest = await buildManifest(this.claudeDir, this.config.syncPaths);
+    peer.sendManifest(this.localManifest);
   }
 
   private async onRemoteManifest(

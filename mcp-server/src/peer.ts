@@ -6,6 +6,7 @@ const { PeerConnection, DataChannel, DescriptionType } = nodeDataChannel;
 type SendSignal = (msg: SignalMessage) => void;
 type OnFileReceived = (path: string, content: Buffer, entry: FileManifestEntry) => void;
 type OnManifestReceived = (manifest: Map<string, FileManifestEntry>) => void;
+type OnConnected = () => void;
 
 export class PeerConnection_ {
   private pc: InstanceType<typeof PeerConnection>;
@@ -13,6 +14,7 @@ export class PeerConnection_ {
   private sendSignal: SendSignal;
   private onFileReceived: OnFileReceived;
   private onManifestReceived: OnManifestReceived;
+  private onConnected: OnConnected;
   private localDeviceName: string;
   private remoteDeviceName: string;
 
@@ -24,13 +26,15 @@ export class PeerConnection_ {
     remoteDeviceName: string,
     sendSignal: SendSignal,
     onFileReceived: OnFileReceived,
-    onManifestReceived: OnManifestReceived
+    onManifestReceived: OnManifestReceived,
+    onConnected: OnConnected
   ) {
     this.localDeviceName = localDeviceName;
     this.remoteDeviceName = remoteDeviceName;
     this.sendSignal = sendSignal;
     this.onFileReceived = onFileReceived;
     this.onManifestReceived = onManifestReceived;
+    this.onConnected = onConnected;
 
     this.pc = new PeerConnection(`crabtalk-${localDeviceName}`, {
       iceServers: ["stun:stun.l.google.com:19302"],
@@ -115,6 +119,7 @@ export class PeerConnection_ {
     dc.onOpen(() => {
       this.connected = true;
       console.error(`[CrabTalk] Data channel open with ${this.remoteDeviceName}`);
+      this.onConnected();
     });
 
     dc.onClosed(() => {
