@@ -5,14 +5,14 @@ Comprehensive guide to deploying, configuring, and operating CrabTalk.
 ## Architecture Overview
 
 ```
-┌──────────────┐     WebSocket      ┌──────────────────┐     WebSocket      ┌──────────────┐
-│  Machine A   │◄──────────────────►│   Signal Server   │◄──────────────────►│  Machine B   │
-│              │    (signaling)      │  (Neon + Hono)    │    (signaling)      │              │
-│  MCP Server  │                    │                    │                    │  MCP Server  │
-│  + Chokidar  │                    │  BetterAuth        │                    │  + Chokidar  │
-│  + WebRTC    │◄───────────────────┼────────────────────┼───────────────────►│  + WebRTC    │
-│              │   P2P Data Channel │                    │  P2P Data Channel  │              │
-└──────────────┘    (DTLS encrypted)└──────────────────┘   (DTLS encrypted) └──────────────┘
+┌──────────────┐     WebSocket         ┌───────────────────┐     WebSocket      ┌──────────────┐
+│  Machine A   │◄─────────────────────►│   Signal Server   │◄──────────────────►│  Machine B   │
+│              │    (signaling)        │  (Neon + Hono)    │    (signaling)     │              │
+│  MCP Server  │                       │                   │                    │  MCP Server  │
+│  + Chokidar  │                       │  BetterAuth       │                    │  + Chokidar  │
+│  + WebRTC    │◄──────────────────────┼───────────────────┼───────────────────►│  + WebRTC    │
+│              │   P2P Data Channel    │                   │  P2P Data Channel  │              │
+└──────────────┘    (DTLS encrypted)   └───────────────────┘   (DTLS encrypted) └──────────────┘
 ```
 
 **Data flow:**
@@ -89,41 +89,36 @@ Skip this section if you only want email/password auth.
 | `GOOGLE_CLIENT_ID` | No | Google OAuth client ID |
 | `GOOGLE_CLIENT_SECRET` | No | Google OAuth client secret |
 | `TRUSTED_ORIGINS` | Yes | Comma-separated allowed CORS origins (HTTPS in production) |
-| `PORT` | No | Server port (default: 3000) |
+
+Variables are set as **Wrangler secrets** in production and in a `.dev.vars` file for local development (see `server/.env.example`).
 
 ### Local development
 
 ```bash
 cd server
 npm install
-npm run build
-npm start
+# Create server/.dev.vars from server/.env.example and fill in values
+npm run dev
 ```
 
-Verify: `curl http://localhost:3000/health` should return `{"status":"alive","service":"crabtalk-signal"}`.
-
-### Production deployment (Fly.io example)
-
-```bash
-cd server
-fly launch --name crabtalk-signal
-fly secrets set DATABASE_URL="postgresql://..."
-fly secrets set GOOGLE_CLIENT_ID="..."
-fly secrets set GOOGLE_CLIENT_SECRET="..."
-fly secrets set TRUSTED_ORIGINS="https://your-auth-page.github.io"
-fly deploy
-```
-
-### Production deployment (Railway example)
-
-1. Connect your GitHub repo
-2. Set root directory to `server`
-3. Set environment variables in the Railway dashboard
-4. Deploy
+Verify: `curl http://localhost:8787/health` should return `{"status":"alive","service":"crabtalk-signal"}`.
 
 ### Production deployment (Cloudflare Workers)
 
-If you need Workers instead of a long-running server (for the WebSocket signaling), you'll need to adapt `server/src/index.ts` to use Cloudflare's WebSocket API and Durable Objects for connection state. The Hono framework already supports Cloudflare Workers — the main change is replacing the `ws` library with Cloudflare's native WebSocket handling.
+```bash
+cd server
+npm install
+wrangler secret put DATABASE_URL
+wrangler secret put GOOGLE_CLIENT_ID
+wrangler secret put GOOGLE_CLIENT_SECRET
+wrangler secret put TRUSTED_ORIGINS
+npm run deploy
+```
+
+The first deploy automatically creates the `SignalingRoom` Durable Object class. Subsequent deploys are zero-downtime rolling updates.
+
+Add your authorized redirect URI in Google Cloud Console:
+- `https://crabtalk-signal.<your-account>.workers.dev/api/auth/callback/google`
 
 ### Verify deployment
 
@@ -132,57 +127,20 @@ curl https://your-signal-server.com/health
 # Expected: {"status":"alive","service":"crabtalk-signal"}
 ```
 
-## 4. Auth Pages (GitHub Pages)
+## 4. Auth Pages (Cloudflare Pages)
 
-BetterAuth handles the API routes (`/api/auth/*`) but you need frontend pages for login/signup if users are authenticating via a browser.
+BetterAuth handles the API routes (`/api/auth/*`) but you need a frontend page for browser-based login.
 
-### Minimal auth page
+### Deploy to Cloudflare Pages
 
-Create a simple HTML page hosted on GitHub Pages (or anywhere static):
+1. In `static/index.html`, update the `API` constant at the top of the `<script>` block to your signal server URL
+2. In `static/_headers`, update the `connect-src` directive to match the same URL
+3. In Cloudflare Pages: connect your repo, set build command to *(none)*, output directory to `static`
+4. Add your Cloudflare Pages URL to `TRUSTED_ORIGINS` on the signal server
 
-```html
-<!DOCTYPE html>
-<html>
-<head><title>CrabTalk Login</title></head>
-<body>
-  <h1>CrabTalk</h1>
-  <form id="login">
-    <input type="email" name="email" placeholder="Email" required>
-    <input type="password" name="password" placeholder="Password" required>
-    <button type="submit">Log In</button>
-  </form>
-  <button id="google">Sign in with Google</button>
+### Verify
 
-  <script>
-    const API = 'https://your-signal-server.com';
-
-    document.getElementById('login').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const form = new FormData(e.target);
-      const res = await fetch(`${API}/api/auth/sign-in/email`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: form.get('email'),
-          password: form.get('password')
-        }),
-        credentials: 'include'
-      });
-      const data = await res.json();
-      if (data.token) {
-        document.body.innerText = `Authenticated. Token: ${data.token}\nCopy this token into your Claude Code session.`;
-      }
-    });
-
-    document.getElementById('google').addEventListener('click', () => {
-      window.location.href = `${API}/api/auth/sign-in/social?provider=google`;
-    });
-  </script>
-</body>
-</html>
-```
-
-Add your GitHub Pages URL to `TRUSTED_ORIGINS` on the signal server.
+Open your Cloudflare Pages URL in a browser. You should see the CrabTalk login card.
 
 ## 5. Plugin Installation
 
@@ -420,11 +378,11 @@ cd server && npm install && npm run build
 ### Running locally
 
 ```bash
-# Terminal 1: Signal server
-cd server && npm start
+# Terminal 1: Signal server (Wrangler dev mode)
+cd server && npm run dev
 
 # Terminal 2: Claude Code with plugin
-export CRABTALK_SIGNAL_URL=http://localhost:3000
+export CRABTALK_SIGNAL_URL=http://localhost:8787
 claude --plugin-dir /path/to/crabtalk
 ```
 
@@ -432,8 +390,8 @@ claude --plugin-dir /path/to/crabtalk
 
 ```bash
 cd server
-npx drizzle-kit push    # Push schema to database
-npx drizzle-kit studio  # Visual database browser
+npm run db:push    # Push schema to database
+npm run db:studio  # Visual database browser
 ```
 
 ## 13. Crab Species Names
