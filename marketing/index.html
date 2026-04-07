@@ -308,5 +308,35 @@
     </div>
   </section>
 
+  <section class="alt" id="install">
+    <div class="container">
+      <p class="section-label">Install</p>
+      <h2 class="section-title">Get the plugin.</h2>
+      <div class="install-block">
+        <code id="install-cmd">claude --plugin-dir /path/to/crabtalk</code>
+        <button class="copy-btn" id="copy-btn" type="button">Copy</button>
+      </div>
+      <p class="install-note">
+        Replace <code>/path/to/crabtalk</code> with the directory where you cloned this repo.<br>
+        Then run <code>/crabtalk:setup</code> in any Claude Code session to link your account.
+      </p>
+      <a class="btn" href="https://claw.crabtalk.dev" target="_blank" rel="noopener">Create an Account</a>
+    </div>
+  </section>
+
+  <script>
+    document.getElementById('copy-btn').addEventListener('click', () => {
+      const text = document.getElementById('install-cmd').textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = document.getElementById('copy-btn');
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = 'Copy';
+          btn.classList.remove('copied');
+        }, 1500);
+      });
+    });
+  </script>
 </body>
 </html>
