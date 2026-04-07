@@ -152,7 +152,9 @@ export class SyncEngine {
 
     for (const peer of peers) {
       if (peer.deviceName !== this.config.deviceName && !this.peers.has(peer.deviceName)) {
-        this.createPeerConnection(peer.deviceName, true);
+        // Deterministic initiator: higher device name wins, preventing both sides from offering
+        const initiator = this.config.deviceName > peer.deviceName;
+        this.createPeerConnection(peer.deviceName, initiator);
       }
     }
   }
