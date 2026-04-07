@@ -50,8 +50,37 @@
       font-size: 0.875rem;
       color: #8b949e;
       text-align: center;
-      margin-bottom: 2rem;
+      margin-bottom: 1.25rem;
       line-height: 1.5;
+    }
+
+    .mode-toggle {
+      display: flex;
+      justify-content: center;
+      gap: 0.75rem;
+      margin-bottom: 1.75rem;
+      font-size: 0.875rem;
+    }
+
+    .mode-toggle button {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: #8b949e;
+      padding: 0;
+      transition: color 0.15s;
+    }
+
+    .mode-toggle button.active {
+      color: #e8851a;
+    }
+
+    .mode-toggle .sep {
+      color: #30363d;
+      user-select: none;
     }
 
     .field {
@@ -173,14 +202,25 @@
     <div class="hero">🦀</div>
     <h1>CrabTalk</h1>
     <p class="subtitle">Authenticate to get a session token for your Claude Code plugin.</p>
+    <div class="mode-toggle">
+      <button id="btn-login" class="active" type="button">Log In</button>
+      <span class="sep">·</span>
+      <button id="btn-signup" type="button">Sign Up</button>
+    </div>
     <form id="login-form">
+      <div class="field" id="field-name" style="display:none">
+        <input type="text" name="name" placeholder="Name" autocomplete="name">
+      </div>
       <div class="field">
         <input type="email" name="email" placeholder="Email" required autocomplete="email">
       </div>
       <div class="field">
         <input type="password" name="password" placeholder="Password" required autocomplete="current-password">
       </div>
-      <button type="submit">Log In</button>
+      <div class="field" id="field-confirm" style="display:none">
+        <input type="password" name="confirm" placeholder="Confirm password" autocomplete="new-password">
+      </div>
+      <button type="submit" id="submit-btn">Log In</button>
     </form>
     <p class="error" id="error-msg"></p>
   </div>
@@ -193,19 +233,53 @@
     const form = document.getElementById('login-form');
     const errorMsg = document.getElementById('error-msg');
     const card = document.getElementById('card');
+    const submitBtn = document.getElementById('submit-btn');
+    const fieldName = document.getElementById('field-name');
+    const fieldConfirm = document.getElementById('field-confirm');
+
+    let mode = 'login';
+
+    document.getElementById('btn-login').addEventListener('click', () => setMode('login'));
+    document.getElementById('btn-signup').addEventListener('click', () => setMode('signup'));
+
+    function setMode(next) {
+      mode = next;
+      errorMsg.textContent = '';
+      document.getElementById('btn-login').classList.toggle('active', mode === 'login');
+      document.getElementById('btn-signup').classList.toggle('active', mode === 'signup');
+      fieldName.style.display = mode === 'signup' ? '' : 'none';
+      fieldConfirm.style.display = mode === 'signup' ? '' : 'none';
+      fieldName.querySelector('input').required = mode === 'signup';
+      fieldConfirm.querySelector('input').required = mode === 'signup';
+      submitBtn.textContent = mode === 'login' ? 'Log In' : 'Create Account';
+    }
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       errorMsg.textContent = '';
 
       const data = new FormData(e.target);
+      const email = data.get('email');
+      const password = data.get('password');
+
+      if (mode === 'signup') {
+        if (password !== data.get('confirm')) {
+          errorMsg.textContent = 'Passwords do not match.';
+          return;
+        }
+      }
+
       let res, json;
+      const endpoint = mode === 'login' ? '/api/auth/sign-in/email' : '/api/auth/sign-up/email';
+      const body = mode === 'login'
+        ? { email, password }
+        : { email, password, name: data.get('name') || email.split('@')[0] };
 
       try {
-        res = await fetch(`${API}/api/auth/sign-in/email`, {
+        res = await fetch(`${API}${endpoint}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: data.get('email'), password: data.get('password') }),
+          body: JSON.stringify(body),
           credentials: 'include',
         });
         json = await res.json();
@@ -215,7 +289,7 @@
       }
 
       if (!res.ok || !json.token) {
-        errorMsg.textContent = json.message || 'Login failed. Check your credentials.';
+        errorMsg.textContent = json.message || (mode === 'login' ? 'Login failed. Check your credentials.' : 'Sign up failed.');
         return;
       }
 
