@@ -9,6 +9,6 @@
     "url": "https://github.com/ObtuseAglet"
   },
   "license": "MIT",
-  "keywords": ["sync", "p2p", "webrtc", "configuration", "multi-device"],
+  "keywords": ["sync", "p2p", "libp2p", "configuration", "multi-device"],
   "mcpServers": "./.mcp.json"
 }

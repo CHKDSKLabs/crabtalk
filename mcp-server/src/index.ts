@@ -36,6 +36,22 @@ function randomCrabName(): string {
   return CRAB_SPECIES[Math.floor(Math.random() * CRAB_SPECIES.length)];
 }
 
+async function ensureEngine(): Promise<SyncEngine | null> {
+  if (engine) return engine;
+
+  const config = loadConfig();
+  if (!config) return null;
+
+  try {
+    engine = new SyncEngine(config);
+    await engine.start();
+    return engine;
+  } catch {
+    engine = null;
+    return null;
+  }
+}
+
 const server = new McpServer({
   name: "crabtalk",
   version: "0.1.0",
@@ -65,14 +81,34 @@ server.registerTool(
 
     await writeFile(CONFIG_PATH, JSON.stringify(config, null, 2));
 
-    engine = new SyncEngine(config);
-    await engine.start();
+    try {
+      engine = new SyncEngine(config);
+      await engine.start();
+    } catch {
+      engine = null;
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: [
+              `Device registered as "${deviceName}". Config saved to ${CONFIG_PATH}.`,
+              ``,
+              `To start syncing, run the CrabTalk daemon:`,
+              `  crabtalk-daemon`,
+              ``,
+              `Or if installed to ~/.claude/bin:`,
+              `  ~/.claude/bin/crabtalk-daemon`,
+            ].join("\n"),
+          },
+        ],
+      };
+    }
 
     return {
       content: [
         {
           type: "text" as const,
-          text: `Device registered as "${deviceName}". Config saved to ${CONFIG_PATH}. Sync engine started.`,
+          text: `Device registered as "${deviceName}". Config saved to ${CONFIG_PATH}. Connected to daemon.`,
         },
       ],
     };
@@ -87,24 +123,30 @@ server.registerTool(
     inputSchema: z.object({}),
   },
   async () => {
-    if (!engine) {
-      const config = loadConfig();
-      if (config) {
-        engine = new SyncEngine(config);
-        await engine.start();
-      } else {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: "CrabTalk is not configured. Run /crabtalk:setup first.",
-            },
-          ],
-        };
-      }
+    if (!loadConfig()) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "CrabTalk is not configured. Run /crabtalk:setup first.",
+          },
+        ],
+      };
     }
 
-    const status = engine.getStatus();
+    const e = await ensureEngine();
+    if (!e) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "CrabTalk daemon is not running. Start it with `crabtalk-daemon`.",
+          },
+        ],
+      };
+    }
+
+    const status = await e.getStatus();
     return {
       content: [
         {
@@ -131,12 +173,12 @@ server.registerTool(
     if (!engine) {
       return {
         content: [
-          { type: "text" as const, text: "CrabTalk is not running." },
+          { type: "text" as const, text: "CrabTalk is not running. Start the daemon with `crabtalk-daemon` first." },
         ],
       };
     }
 
-    let conflicts = engine.getConflicts();
+    let conflicts = await engine.getConflicts();
     if (filePath) {
       conflicts = conflicts.filter((c) => c.path === filePath);
     }
@@ -196,12 +238,12 @@ server.registerTool(
     if (!engine) {
       return {
         content: [
-          { type: "text" as const, text: "CrabTalk is not running." },
+          { type: "text" as const, text: "CrabTalk is not running. Start the daemon with `crabtalk-daemon` first." },
         ],
       };
     }
 
-    const resolved = engine.resolveConflict(filePath, resolution, manualContent);
+    const resolved = await engine.resolveConflict(filePath, resolution, manualContent);
 
     if (!resolved) {
       return {
@@ -214,7 +256,7 @@ server.registerTool(
       };
     }
 
-    const remaining = engine.getConflicts().length;
+    const remaining = (await engine.getConflicts()).length;
     return {
       content: [
         {
@@ -234,24 +276,30 @@ server.registerTool(
     inputSchema: z.object({}),
   },
   async () => {
-    if (!engine) {
-      const config = loadConfig();
-      if (config) {
-        engine = new SyncEngine(config);
-        await engine.start();
-      } else {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: "CrabTalk is not configured. Run /crabtalk:setup first.",
-            },
-          ],
-        };
-      }
+    if (!loadConfig()) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "CrabTalk is not configured. Run /crabtalk:setup first.",
+          },
+        ],
+      };
     }
 
-    const result = await engine.syncNow();
+    const e = await ensureEngine();
+    if (!e) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "CrabTalk daemon is not running. Start it with `crabtalk-daemon`.",
+          },
+        ],
+      };
+    }
+
+    const result = await e.syncNow();
     return {
       content: [
         {
@@ -268,15 +316,14 @@ async function main() {
   await server.connect(transport);
   console.error("[CrabTalk] MCP server running on stdio");
 
-  // Auto-start engine if config exists — non-fatal if signal connection fails
   const config = loadConfig();
   if (config) {
     try {
       engine = new SyncEngine(config);
       await engine.start();
-      console.error(`[CrabTalk] Sync engine started as ${config.deviceName}`);
+      console.error(`[CrabTalk] Connected to daemon as ${config.deviceName}`);
     } catch (err) {
-      console.error("[CrabTalk] Sync engine failed to start (tools still available):", err);
+      console.error("[CrabTalk] Daemon not running (tools still available, will connect on demand):", err);
       engine = null;
     }
   }

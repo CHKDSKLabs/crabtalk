@@ -5,7 +5,6 @@ import { createDb } from "./db/index.js";
 import * as schema from "./db/schema.js";
 
 export interface Env {
-  SIGNALING: DurableObjectNamespace;
   DATABASE_URL: string;
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;

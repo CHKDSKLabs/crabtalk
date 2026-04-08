@@ -52,6 +52,22 @@
       color: var(--accent);
     }
 
+    .nav-links {
+      display: flex;
+      gap: 1.25rem;
+      margin-left: auto;
+      align-items: center;
+    }
+
+    .nav-links a {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 0.875rem;
+      transition: color 0.15s;
+    }
+
+    .nav-links a:hover { color: var(--text); }
+
     /* ── hero ──────────────────────────────────────── */
     .hero {
       text-align: center;
@@ -259,6 +275,10 @@
   <nav>
     <img src="assets/CRABTALK.svg" alt="CrabTalk">
     <span>CrabTalk</span>
+    <div class="nav-links">
+      <a href="/docs/">Docs</a>
+      <a href="https://github.com/ObtuseAglet/crabtalk" target="_blank" rel="noopener">GitHub</a>
+    </div>
   </nav>
 
   <div class="hero">
@@ -325,6 +345,8 @@
   </section>
 
   <footer>
+    <a href="/docs/">Docs</a>
+    <a href="https://github.com/ObtuseAglet/crabtalk" target="_blank" rel="noopener">GitHub</a>
     <a href="https://chkdsklabs.io" target="_blank" rel="noopener">Made by CHKDSK Labs</a>
     <a href="https://buymeacoffee.com/jayub" target="_blank" rel="noopener">☕ Buy me a coffee</a>
     <a href="https://chkdsklabs.io/compliance" target="_blank" rel="noopener">Privacy and Terms</a>

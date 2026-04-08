@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Troubleshooting — CrabTalk Docs</title>
+  <meta name="description" content="Fix common CrabTalk issues: daemon not starting, peers not connecting, sync failures, and manual binary installation.">
+  <link rel="icon" type="image/svg+xml" href="../assets/CRABTALK.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+  <nav>
+    <img src="../assets/CRABTALK.svg" alt="CrabTalk">
+    <a class="nav-brand" href="/">CrabTalk</a>
+    <div class="nav-links">
+      <a href="/">Home</a>
+      <a href="/docs/" class="active">Docs</a>
+      <a href="https://github.com/ObtuseAglet/crabtalk" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </nav>
+
+  <div class="docs-layout">
+    <aside class="sidebar">
+      <div class="sidebar-section">
+        <p class="sidebar-heading">Overview</p>
+        <ul class="sidebar-nav">
+          <li><a href="/docs/">Introduction</a></li>
+        </ul>
+      </div>
+      <div class="sidebar-section">
+        <p class="sidebar-heading">Guides</p>
+        <ul class="sidebar-nav">
+          <li><a href="/docs/getting-started.html">Getting Started</a></li>
+          <li><a href="/docs/how-it-works.html">How It Works</a></li>
+        </ul>
+      </div>
+      <div class="sidebar-section">
+        <p class="sidebar-heading">Reference</p>
+        <ul class="sidebar-nav">
+          <li><a href="/docs/troubleshooting.html" class="active">Troubleshooting</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <main class="content">
+      <h1>Troubleshooting</h1>
+      <p class="page-sub">When something's not syncing, start here.</p>
+
+      <h2>Daemon not starting</h2>
+
+      <h3>The binary didn't download</h3>
+      <p>
+        On first run, <code>scripts/start.mjs</code> downloads the daemon binary from GitHub Releases and places it at
+        <code>~/.claude/bin/crabtalk-daemon</code> (or <code>crabtalk-daemon.exe</code> on Windows).
+        If your machine has no internet access at startup, or GitHub was temporarily unavailable, the download fails silently and the plugin runs without the daemon.
+      </p>
+      <p>Check whether the binary exists:</p>
+      <div class="code-block">
+        <pre><span class="comment"># macOS / Linux</span>
+ls ~/.claude/bin/crabtalk-daemon
+
+<span class="comment"># Windows (PowerShell)</span>
+Test-Path "$env:USERPROFILE\.claude\bin\crabtalk-daemon.exe"</pre>
+      </div>
+      <p>If it's missing, restart Claude Code with internet access and it will retry. Or install manually — see <a href="#manual-install">Manual installation</a> below.</p>
+
+      <h3>The binary isn't executable (macOS / Linux)</h3>
+      <p>The download script sets the executable bit automatically, but sometimes extraction strips it.</p>
+      <div class="code-block">
+        <pre>chmod +x ~/.claude/bin/crabtalk-daemon</pre>
+      </div>
+
+      <h3>macOS Gatekeeper block</h3>
+      <p>
+        macOS may quarantine the downloaded binary because it's not notarized. If you see
+        "crabtalk-daemon cannot be opened because it is from an unidentified developer":
+      </p>
+      <div class="code-block">
+        <pre>xattr -d com.apple.quarantine ~/.claude/bin/crabtalk-daemon</pre>
+      </div>
+
+      <h3>Windows Defender block</h3>
+      <p>
+        Unsigned Rust binaries are occasionally flagged by Windows Defender on first execution.
+        If the daemon fails to start silently on Windows, check Windows Security → Protection History.
+        You may need to add <code>%USERPROFILE%\.claude\bin\</code> to the exclusion list.
+      </p>
+
+      <h2>Peers not connecting</h2>
+
+      <h3>Check daemon status</h3>
+      <p>Run in a Claude Code session:</p>
+      <div class="code-block">
+        <pre>/crabtalk:status</pre>
+      </div>
+      <p>
+        The output shows your peer ID, listen addresses, and the list of currently connected peers.
+        If <strong>connected peers</strong> is empty but you've set up multiple machines, work through the checks below.
+      </p>
+
+      <h3>Both machines must be running</h3>
+      <p>
+        The daemon only connects to online peers. If machine B is asleep or Claude Code isn't running, machine A won't show it as connected.
+        This is expected — sync resumes automatically when B comes back online.
+      </p>
+
+      <h3>Rendezvous registration</h3>
+      <p>
+        The daemon re-registers its addresses every five minutes. If a machine just woke up from sleep, wait up to five minutes
+        for both peers to re-register and reconnect, or force an immediate sync:
+      </p>
+      <div class="code-block">
+        <pre>/crabtalk:sync-now</pre>
+      </div>
+
+      <h3>Firewall blocking QUIC</h3>
+      <p>
+        CrabTalk uses QUIC (UDP) for peer-to-peer connections. Some corporate firewalls or VPNs block outbound UDP entirely.
+        If you're on a restricted network, mDNS (LAN discovery) may still work for machines on the same subnet,
+        but WAN connections through the rendezvous server will fail. There is currently no TCP fallback.
+      </p>
+
+      <h3>Both machines on the same account</h3>
+      <p>Devices only sync with peers registered to the same CrabTalk account. Verify with:</p>
+      <div class="code-block">
+        <pre>/crabtalk:status</pre>
+      </div>
+      <p>The <strong>device name</strong> and <strong>account ID</strong> should match what you see at <a href="https://claw.crabtalk.dev" target="_blank" rel="noopener">claw.crabtalk.dev</a>.</p>
+
+      <h2>Sync not working</h2>
+
+      <h3>File is excluded</h3>
+      <p>CrabTalk skips hidden files (names starting with <code>.</code>) and <code>node_modules/</code> directories. If you want to sync a dotfile outside <code>~/.claude/</code>, it's not currently supported.</p>
+
+      <h3>Conflict blocking the file</h3>
+      <p>A conflicted file won't be overwritten until you resolve it. List conflicts with:</p>
+      <div class="code-block">
+        <pre>/crabtalk:list-conflicts</pre>
+      </div>
+      <p>Then resolve each one:</p>
+      <div class="code-block">
+        <pre><span class="comment"># keep local version</span>
+/crabtalk:resolve-conflict {"path": "CLAUDE.md", "resolution": "local"}
+
+<span class="comment"># keep remote version</span>
+/crabtalk:resolve-conflict {"path": "CLAUDE.md", "resolution": "remote"}</pre>
+      </div>
+
+      <h3>Daemon restarted and lost state</h3>
+      <p>
+        If the daemon crashes and restarts while a sync is in progress, the partial transfer is abandoned.
+        Run <code>/crabtalk:sync-now</code> to re-initiate from the manifest comparison.
+      </p>
+
+      <h2 id="manual-install">Manual installation</h2>
+      <p>If the auto-download fails, you can install the daemon binary by hand from the <a href="https://github.com/ObtuseAglet/crabtalk/releases" target="_blank" rel="noopener">GitHub Releases page</a>.</p>
+
+      <p>Download the archive for your platform:</p>
+      <div class="code-block">
+        <pre>crabtalk-daemon-x86_64-linux.tar.gz    <span class="comment"># Linux x86</span>
+crabtalk-daemon-aarch64-linux.tar.gz   <span class="comment"># Linux ARM64</span>
+crabtalk-daemon-x86_64-macos.tar.gz    <span class="comment"># macOS Intel</span>
+crabtalk-daemon-aarch64-macos.tar.gz   <span class="comment"># macOS Apple Silicon</span>
+crabtalk-daemon-x86_64-windows.zip     <span class="comment"># Windows x86</span>
+crabtalk-daemon-aarch64-windows.zip    <span class="comment"># Windows ARM64</span></pre>
+      </div>
+
+      <p>Extract it and place the binary at <code>~/.claude/bin/</code>:</p>
+      <div class="code-block">
+        <pre><span class="comment"># macOS / Linux</span>
+mkdir -p ~/.claude/bin
+tar -xzf crabtalk-daemon-*.tar.gz -C ~/.claude/bin/
+chmod +x ~/.claude/bin/crabtalk-daemon
+
+<span class="comment"># Windows (PowerShell)</span>
+New-Item -ItemType Directory -Force "$env:USERPROFILE\.claude\bin"
+Expand-Archive crabtalk-daemon-*.zip -DestinationPath "$env:USERPROFILE\.claude\bin" -Force</pre>
+      </div>
+
+      <p>Restart Claude Code — the plugin will detect the binary and start the daemon.</p>
+
+      <h2>Still stuck?</h2>
+      <p>
+        Open an issue on <a href="https://github.com/ObtuseAglet/crabtalk/issues" target="_blank" rel="noopener">GitHub</a>
+        and include the output of <code>/crabtalk:status</code>. The daemon logs to stderr, which gets captured in the Claude Code MCP server logs.
+      </p>
+
+      <div class="callout note">
+        <p class="callout-title">Self-hosting the rendezvous server</p>
+        <p>
+          If you hit rate limits or want to run your own infrastructure, the rendezvous server is a plain Cloudflare Worker.
+          Deploy it yourself and set <code>CRABTALK_SIGNAL_URL</code> in <code>.mcp.json</code> to your own endpoint.
+        </p>
+      </div>
+    </main>
+  </div>
+
+  <footer>
+    <a href="https://chkdsklabs.io" target="_blank" rel="noopener">Made by CHKDSK Labs</a>
+    <a href="https://buymeacoffee.com/jayub" target="_blank" rel="noopener">☕ Buy me a coffee</a>
+    <a href="https://chkdsklabs.io/compliance" target="_blank" rel="noopener">Privacy and Terms</a>
+  </footer>
+
+</body>
+</html>

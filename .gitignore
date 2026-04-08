@@ -12,3 +12,4 @@ server/.dev.vars
 .claude-plugin/*
 mcp-server/.claude/*
 docs/*
+daemon/target/

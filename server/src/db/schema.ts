@@ -56,5 +56,6 @@ export const peers = pgTable("peers", {
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   deviceName: text("device_name").notNull(),
+  multiaddrs: text("multiaddrs"),
   lastSeen: timestamp("last_seen").notNull().defaultNow(),
 });

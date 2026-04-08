@@ -1,8 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { type Env, createAuth } from "./auth.js";
-
-export { SignalingRoom } from "./signaling.js";
+import { rendezvousApp } from "./rendezvous.js";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -20,6 +19,8 @@ app.on(["POST", "GET"], "/api/auth/**", (c) => {
 app.get("/", (c) => {return c.redirect("https://crabtalk.dev", 302)});
 
 app.get("/health", (c) => c.json({ status: "alive", service: "crabtalk-signal" }));
+
+app.route("/", rendezvousApp);
 
 app.get("/setup", async (c) => {
   const session = await createAuth(c.env)
@@ -55,41 +56,6 @@ app.get("/setup", async (c) => {
   <button onclick="const btn=this; navigator.clipboard.writeText(document.getElementById('token').textContent).then(()=>{btn.textContent='Copied!';btn.classList.add('copied');setTimeout(()=>{btn.textContent='Copy Token';btn.classList.remove('copied')},2000)})">Copy Token</button>
 </body>
 </html>`);
-});
-
-app.get("/ws", async (c) => {
-  if (c.req.header("Upgrade") !== "websocket") {
-    return c.text("Expected websocket", 426);
-  }
-
-  const authHeader = c.req.header("Authorization");
-  const deviceName = c.req.header("X-Device-Name");
-
-  if (!authHeader || !deviceName) {
-    return c.text("Missing Authorization or X-Device-Name header", 400);
-  }
-
-  const session = await createAuth(c.env)
-    .api.getSession({ headers: c.req.raw.headers })
-    .catch(() => null);
-
-  if (!session?.user?.id) {
-    return c.text("Unauthorized", 401);
-  }
-
-  // Each user gets their own DO — all their devices share one instance so
-  // broadcastPeerList() can reach every connected socket without cross-instance calls.
-  const stub = c.env.SIGNALING.get(c.env.SIGNALING.idFromName(session.user.id));
-
-  return stub.fetch(
-    new Request(c.req.url, {
-      headers: new Headers({
-        Upgrade: "websocket",
-        "X-User-Id": session.user.id,
-        "X-Device-Name": deviceName,
-      }),
-    })
-  );
 });
 
 export default {

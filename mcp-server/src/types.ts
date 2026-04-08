@@ -34,13 +34,6 @@ export interface PeerInfo {
   connected: boolean;
 }
 
-export interface SignalMessage {
-  type: "offer" | "answer" | "ice-candidate" | "manifest" | "file-request" | "file-data" | "conflict";
-  from: string;
-  to: string;
-  payload: unknown;
-}
-
 export interface SyncStatus {
   deviceName: string;
   signalConnected: boolean;

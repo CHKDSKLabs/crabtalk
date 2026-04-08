@@ -1,0 +1,90 @@
+name: Release Daemon
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            asset: crabtalk-daemon-x86_64-linux.tar.gz
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            asset: crabtalk-daemon-aarch64-linux.tar.gz
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            asset: crabtalk-daemon-x86_64-macos.tar.gz
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            asset: crabtalk-daemon-aarch64-macos.tar.gz
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            asset: crabtalk-daemon-x86_64-windows.zip
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
+            asset: crabtalk-daemon-aarch64-windows.zip
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools (Linux aarch64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+
+      - name: Build
+        working-directory: daemon
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p staging
+          cp daemon/target/${{ matrix.target }}/release/crabtalk-daemon staging/
+          cd staging
+          tar czf ../${{ matrix.asset }} crabtalk-daemon
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force staging
+          Copy-Item "daemon/target/${{ matrix.target }}/release/crabtalk-daemon.exe" staging/
+          Compress-Archive -Path staging/crabtalk-daemon.exe -DestinationPath ${{ matrix.asset }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true

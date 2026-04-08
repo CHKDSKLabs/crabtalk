@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Getting Started — CrabTalk Docs</title>
+  <meta name="description" content="Install CrabTalk and sync your Claude Code config across machines in minutes.">
+  <link rel="icon" type="image/svg+xml" href="../assets/CRABTALK.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+  <nav>
+    <img src="../assets/CRABTALK.svg" alt="CrabTalk">
+    <a class="nav-brand" href="/">CrabTalk</a>
+    <div class="nav-links">
+      <a href="/">Home</a>
+      <a href="/docs/" class="active">Docs</a>
+      <a href="https://github.com/ObtuseAglet/crabtalk" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </nav>
+
+  <div class="docs-layout">
+    <aside class="sidebar">
+      <div class="sidebar-section">
+        <p class="sidebar-heading">Overview</p>
+        <ul class="sidebar-nav">
+          <li><a href="/docs/">Introduction</a></li>
+        </ul>
+      </div>
+      <div class="sidebar-section">
+        <p class="sidebar-heading">Guides</p>
+        <ul class="sidebar-nav">
+          <li><a href="/docs/getting-started.html" class="active">Getting Started</a></li>
+          <li><a href="/docs/how-it-works.html">How It Works</a></li>
+        </ul>
+      </div>
+      <div class="sidebar-section">
+        <p class="sidebar-heading">Reference</p>
+        <ul class="sidebar-nav">
+          <li><a href="/docs/troubleshooting.html">Troubleshooting</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <main class="content">
+      <h1>Getting Started</h1>
+      <p class="page-sub">From zero to syncing in about five minutes.</p>
+
+      <h2>Prerequisites</h2>
+      <ul>
+        <li><a href="https://claude.ai/download" target="_blank" rel="noopener">Claude Code</a> installed and authenticated</li>
+        <li>A <a href="https://claw.crabtalk.dev" target="_blank" rel="noopener">CrabTalk account</a> (free)</li>
+        <li>At least two machines you want to keep in sync</li>
+      </ul>
+
+      <div class="callout note">
+        <p class="callout-title">Daemon download</p>
+        <p>CrabTalk ships a small Rust binary (<code>crabtalk-daemon</code>) that handles all P2P networking. It downloads automatically from GitHub Releases the first time you start the plugin — no Rust toolchain needed.</p>
+      </div>
+
+      <h2>Installation</h2>
+      <ol class="step-list">
+        <li>
+          <div class="step-body">
+            <h3>Clone the repo</h3>
+            <p>Pick a permanent home — CrabTalk reads from this directory at startup.</p>
+            <div class="code-block">
+              <pre>git clone https://github.com/ObtuseAglet/crabtalk ~/.claude/plugins/crabtalk</pre>
+            </div>
+            <p>Cloning into <code>~/.claude/plugins/</code> is optional but keeps things tidy.</p>
+          </div>
+        </li>
+        <li>
+          <div class="step-body">
+            <h3>Register the plugin with Claude Code</h3>
+            <p>Tell Claude Code where to find the plugin:</p>
+            <div class="code-block">
+              <pre>claude --plugin-dir ~/.claude/plugins/crabtalk</pre>
+            </div>
+            <p>Claude Code will pick up the <code>.claude-plugin/plugin.json</code> manifest and wire up the MCP server automatically.</p>
+          </div>
+        </li>
+        <li>
+          <div class="step-body">
+            <h3>Authenticate</h3>
+            <p>Start a Claude Code session and run the setup command:</p>
+            <div class="code-block">
+              <pre>/crabtalk:setup</pre>
+            </div>
+            <p>Claude will open <code>claw.crabtalk.dev</code> in your browser. Log in (or create an account), copy the token, and paste it back when prompted. Your device is now registered.</p>
+          </div>
+        </li>
+        <li>
+          <div class="step-body">
+            <h3>Repeat on your other machines</h3>
+            <p>Clone the repo and run <code>/crabtalk:setup</code> on every machine you want to sync. Peers are discovered automatically — once two devices share the same account, they'll find each other and begin syncing.</p>
+          </div>
+        </li>
+      </ol>
+
+      <h2>Verifying sync is working</h2>
+      <p>In any Claude Code session you can check the current state:</p>
+      <div class="code-block">
+        <pre><span class="comment"># Check daemon health and connected peers</span>
+/crabtalk:status
+
+<span class="comment"># Force an immediate sync push</span>
+/crabtalk:sync-now</pre>
+      </div>
+      <p>The status output shows your device name, peer IDs of connected machines, and the timestamp of the last successful sync.</p>
+
+      <h2>What happens on first sync</h2>
+      <p>
+        CrabTalk builds a manifest of all watched files on both machines, diffs them, and requests missing or newer files from the remote peer.
+        Changes you made on machine A before machine B was set up are transferred in full — it's not a one-way overwrite.
+      </p>
+
+      <div class="callout warning">
+        <p class="callout-title">Conflict handling</p>
+        <p>If the same file was modified on both machines while they were offline, CrabTalk keeps both versions and flags it as a conflict. Run <code>/crabtalk:resolve-conflicts</code> to review and pick a winner.</p>
+      </div>
+
+      <h2>Uninstalling</h2>
+      <p>Remove the <code>--plugin-dir</code> flag from your Claude Code launch config and delete the cloned repo. The daemon binary lives at <code>~/.claude/bin/crabtalk-daemon</code> and can be removed manually.</p>
+    </main>
+  </div>
+
+  <footer>
+    <a href="https://chkdsklabs.io" target="_blank" rel="noopener">Made by CHKDSK Labs</a>
+    <a href="https://buymeacoffee.com/jayub" target="_blank" rel="noopener">☕ Buy me a coffee</a>
+    <a href="https://chkdsklabs.io/compliance" target="_blank" rel="noopener">Privacy and Terms</a>
+  </footer>
+
+</body>
+</html>

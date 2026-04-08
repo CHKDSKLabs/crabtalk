@@ -2,7 +2,7 @@
   "mcpServers": {
     "crabtalk": {
       "command": "node",
-      "args": ["C:/Users/Spork/dev/crabtalk/scripts/start.mjs"],
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/start.mjs"],
       "env": {
         "CRABTALK_SIGNAL_URL": "https://claw.crabtalk.dev"
       }

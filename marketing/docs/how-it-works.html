@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>How It Works — CrabTalk Docs</title>
+  <meta name="description" content="CrabTalk architecture: libp2p, QUIC transport, the rendezvous server, and how files are synced between peers.">
+  <link rel="icon" type="image/svg+xml" href="../assets/CRABTALK.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="docs.css">
+  <style>
+    .arch-diagram {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.75rem 1.5rem;
+      margin: 1.5rem 0;
+      max-width: var(--content-max);
+      font-family: 'Courier New', monospace;
+      font-size: 0.8125rem;
+      line-height: 1.8;
+      color: var(--muted);
+      overflow-x: auto;
+    }
+
+    .arch-diagram .highlight { color: var(--accent); }
+    .arch-diagram .dim { color: #444c56; }
+
+    .component-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin: 1.25rem 0 2rem;
+      max-width: var(--content-max);
+    }
+
+    .component-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.125rem;
+    }
+
+    .component-card h3 {
+      font-size: 0.9375rem;
+      margin-top: 0;
+      margin-bottom: 0.375rem;
+    }
+
+    .component-card p {
+      font-size: 0.8125rem;
+      margin: 0;
+    }
+
+    .tag {
+      display: inline-block;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      padding: 0.125rem 0.5rem;
+      border-radius: 3px;
+      margin-bottom: 0.5rem;
+    }
+
+    .tag.rust { background: #3c2a1a; color: #f0883e; }
+    .tag.node { background: #162a1a; color: #3fb950; }
+    .tag.cf { background: #1a1a2e; color: #58a6ff; }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <img src="../assets/CRABTALK.svg" alt="CrabTalk">
+    <a class="nav-brand" href="/">CrabTalk</a>
+    <div class="nav-links">
+      <a href="/">Home</a>
+      <a href="/docs/" class="active">Docs</a>
+      <a href="https://github.com/ObtuseAglet/crabtalk" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </nav>
+
+  <div class="docs-layout">
+    <aside class="sidebar">
+      <div class="sidebar-section">
+        <p class="sidebar-heading">Overview</p>
+        <ul class="sidebar-nav">
+          <li><a href="/docs/">Introduction</a></li>
+        </ul>
+      </div>
+      <div class="sidebar-section">
+        <p class="sidebar-heading">Guides</p>
+        <ul class="sidebar-nav">
+          <li><a href="/docs/getting-started.html">Getting Started</a></li>
+          <li><a href="/docs/how-it-works.html" class="active">How It Works</a></li>
+        </ul>
+      </div>
+      <div class="sidebar-section">
+        <p class="sidebar-heading">Reference</p>
+        <ul class="sidebar-nav">
+          <li><a href="/docs/troubleshooting.html">Troubleshooting</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <main class="content">
+      <h1>How It Works</h1>
+      <p class="page-sub">The full stack, from file watcher to remote peer.</p>
+
+      <h2>Architecture overview</h2>
+      <p>CrabTalk has three layers. Each one has a single, narrow job.</p>
+
+      <div class="arch-diagram">
+<pre><span class="highlight">  ┌─────────────────────────────────────────────┐
+  │           crabtalk-daemon  (Rust)           │
+  │                                             │
+  │  file watcher → manifest diff → libp2p     │
+  │                                     QUIC   │
+  └──────────────────────┬──────────────────────┘
+                         │ named pipe / unix socket (IPC)
+  ┌──────────────────────┴──────────────────────┐
+  │           MCP server  (Node.js)             │
+  │  Claude Code ←→ tool calls ←→ daemon IPC   │
+  └──────────────────────┬──────────────────────┘
+                         │ REST  (address lookup only)
+  ┌──────────────────────┴──────────────────────┐
+  │     claw.crabtalk.dev  (Cloudflare Workers) │</span>
+  │  POST /api/rendezvous  — register address   │
+  │  GET  /api/rendezvous  — fetch peer addrs   │
+  │  DELETE               — deregister          │
+<span class="highlight">  └─────────────────────────────────────────────┘</span></pre>
+      </div>
+
+      <div class="component-grid">
+        <div class="component-card">
+          <span class="tag rust">Rust</span>
+          <h3>crabtalk-daemon</h3>
+          <p>Watches <code>~/.claude/</code>, manages libp2p connections, handles file transfer. Runs in the background.</p>
+        </div>
+        <div class="component-card">
+          <span class="tag node">Node.js</span>
+          <h3>MCP server</h3>
+          <p>Exposes Claude Code tools (<code>sync-now</code>, <code>get-status</code>, etc.) by proxying commands over IPC to the daemon.</p>
+        </div>
+        <div class="component-card">
+          <span class="tag cf">Cloudflare</span>
+          <h3>Rendezvous server</h3>
+          <p>A phone book. Stores each device's libp2p multiaddrs so peers can dial each other. Holds no file content.</p>
+        </div>
+      </div>
+
+      <h2>The daemon</h2>
+      <p>
+        <code>crabtalk-daemon</code> is a small Rust binary that starts in the background when Claude Code launches the plugin.
+        It opens a <a href="https://libp2p.io" target="_blank" rel="noopener">libp2p</a> swarm on a random port using QUIC transport
+        and listens for connections from other CrabTalk instances.
+      </p>
+      <p>
+        The daemon exposes a local IPC channel — a named pipe on Windows
+        (<code>\\.\pipe\crabtalk-daemon</code>) and a Unix socket on macOS/Linux
+        (<code>~/.claude/crabtalk.sock</code>). The MCP server connects to this pipe
+        and speaks NDJSON: one JSON object per line, each tagged with a <code>requestId</code> for
+        correlation.
+      </p>
+
+      <h2>Peer discovery</h2>
+      <p>CrabTalk finds peers two ways, and uses whichever works:</p>
+      <ul>
+        <li><strong>mDNS (LAN)</strong> — on the same local network, peers announce themselves via multicast DNS and connect directly without touching the rendezvous server.</li>
+        <li><strong>Rendezvous (WAN)</strong> — the daemon registers its current multiaddrs with <code>claw.crabtalk.dev</code> every five minutes. When another device looks up your account, it gets those addresses and dials directly.</li>
+      </ul>
+      <p>After the initial address exchange, all traffic is peer-to-peer. The rendezvous server is never in the data path.</p>
+
+      <h2>File sync protocol</h2>
+      <p>Sync runs in two passes over a libp2p request-response stream:</p>
+      <ol>
+        <li>
+          <strong>Manifest exchange</strong> — each peer sends a JSON manifest listing every watched file with its path and SHA-256 hash.
+          The initiating peer diffs the two manifests to produce a list of files it needs.
+        </li>
+        <li>
+          <strong>File transfer</strong> — for each missing or outdated file, the peer opens a new stream and requests the file by path.
+          The response streams the raw bytes directly; there's no message-size limit because libp2p streams are framed at the transport layer, not the application layer.
+        </li>
+      </ol>
+      <p>
+        All streams are encrypted end-to-end with the <a href="https://noiseprotocol.org" target="_blank" rel="noopener">Noise protocol</a>
+        and authenticated against each peer's libp2p keypair. A peer that isn't in your account can't read your files, even on the same network.
+      </p>
+
+      <h2>Conflict resolution</h2>
+      <p>
+        CrabTalk uses last-write-wins by default: the file with the newer modification time wins.
+        If both copies were modified within the same second while offline, it's treated as a conflict —
+        both versions are preserved locally and flagged in the daemon state.
+      </p>
+      <p>
+        Conflicts surface in Claude Code via the <code>list-conflicts</code> tool and can be resolved
+        with <code>resolve-conflict</code>, which accepts <code>"local"</code> or <code>"remote"</code>
+        as the winning side.
+      </p>
+
+      <h2>Privacy</h2>
+      <p>
+        The rendezvous server stores only your device name, account ID, and libp2p multiaddrs (IP addresses + port numbers).
+        It never sees file names or file contents. Addresses are purged automatically after 10 minutes of inactivity.
+        File data travels exclusively between your own machines.
+      </p>
+
+      <div class="callout tip">
+        <p class="callout-title">Open source</p>
+        <p>The full source — daemon, MCP server, and rendezvous server — is on <a href="https://github.com/ObtuseAglet/crabtalk" target="_blank" rel="noopener">GitHub</a>. You can audit it, self-host the rendezvous server, and point the daemon at your own endpoint via the config file.</p>
+      </div>
+    </main>
+  </div>
+
+  <footer>
+    <a href="https://chkdsklabs.io" target="_blank" rel="noopener">Made by CHKDSK Labs</a>
+    <a href="https://buymeacoffee.com/jayub" target="_blank" rel="noopener">☕ Buy me a coffee</a>
+    <a href="https://chkdsklabs.io/compliance" target="_blank" rel="noopener">Privacy and Terms</a>
+  </footer>
+
+</body>
+</html>

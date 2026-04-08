@@ -12,13 +12,9 @@ pattern = "claw.crabtalk.dev"
 zone_name = "crabtalk.dev"
 custom_domain = true
 
-[[durable_objects.bindings]]
-name = "SIGNALING"
-class_name = "SignalingRoom"
-
 [[migrations]]
-tag = "v1"
-new_classes = ["SignalingRoom"]
+tag = "v2"
+deleted_classes = ["SignalingRoom"]
 
 # Set secrets via: wrangler secret put <NAME>
 # DATABASE_URL

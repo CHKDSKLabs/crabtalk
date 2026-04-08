@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Docs — CrabTalk</title>
+  <meta name="description" content="CrabTalk documentation — installation, architecture, troubleshooting.">
+  <link rel="icon" type="image/svg+xml" href="../assets/CRABTALK.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+  <nav>
+    <img src="../assets/CRABTALK.svg" alt="CrabTalk">
+    <a class="nav-brand" href="/">CrabTalk</a>
+    <div class="nav-links">
+      <a href="/" >Home</a>
+      <a href="/docs/" class="active">Docs</a>
+      <a href="https://github.com/ObtuseAglet/crabtalk" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </nav>
+
+  <div class="docs-layout">
+    <aside class="sidebar">
+      <div class="sidebar-section">
+        <p class="sidebar-heading">Overview</p>
+        <ul class="sidebar-nav">
+          <li><a href="/docs/" class="active">Introduction</a></li>
+        </ul>
+      </div>
+      <div class="sidebar-section">
+        <p class="sidebar-heading">Guides</p>
+        <ul class="sidebar-nav">
+          <li><a href="/docs/getting-started.html">Getting Started</a></li>
+          <li><a href="/docs/how-it-works.html">How It Works</a></li>
+        </ul>
+      </div>
+      <div class="sidebar-section">
+        <p class="sidebar-heading">Reference</p>
+        <ul class="sidebar-nav">
+          <li><a href="/docs/troubleshooting.html">Troubleshooting</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <main class="content">
+      <h1>CrabTalk Docs</h1>
+      <p class="page-sub">Everything you need to sync your Claude Code config across machines.</p>
+
+      <h2>What is CrabTalk?</h2>
+      <p>
+        CrabTalk is a Claude Code plugin that keeps your configuration in sync across every machine you work on.
+        Plugins, agents, settings, instructions — when you change something on one machine, it shows up everywhere else.
+        No cloud storage. No manual exports. No configuration drift.
+      </p>
+
+      <h2>How it's different</h2>
+      <p>
+        Most sync tools route your files through a central server. CrabTalk uses
+        <a href="https://libp2p.io" target="_blank" rel="noopener">libp2p</a> to connect your machines directly, peer-to-peer.
+        A lightweight rendezvous server helps peers find each other's addresses — after that,
+        all data travels directly between your machines over an encrypted QUIC connection.
+      </p>
+
+      <h2>What gets synced</h2>
+      <ul>
+        <li><code>~/.claude/plugins/</code> — installed plugins</li>
+        <li><code>~/.claude/agents/</code> — custom agents</li>
+        <li><code>~/.claude/settings.json</code> — settings and statusline config</li>
+        <li><code>~/.claude/CLAUDE.md</code> — your global instructions</li>
+        <li><code>~/.claude/keybindings.json</code> — keyboard shortcuts</li>
+      </ul>
+
+      <h2>Where to start</h2>
+      <p>
+        Head to <a href="/docs/getting-started.html">Getting Started</a> to install the plugin and run your first sync.
+        If you're curious about the internals, <a href="/docs/how-it-works.html">How It Works</a> covers the full architecture.
+        Stuck? Check <a href="/docs/troubleshooting.html">Troubleshooting</a>.
+      </p>
+
+      <div class="callout tip">
+        <p class="callout-title">Plugin marketplace</p>
+        <p>CrabTalk is distributed as a Claude Code plugin. The daemon binary is downloaded automatically on first run — no Rust toolchain required.</p>
+      </div>
+    </main>
+  </div>
+
+  <footer>
+    <a href="https://chkdsklabs.io" target="_blank" rel="noopener">Made by CHKDSK Labs</a>
+    <a href="https://buymeacoffee.com/jayub" target="_blank" rel="noopener">☕ Buy me a coffee</a>
+    <a href="https://chkdsklabs.io/compliance" target="_blank" rel="noopener">Privacy and Terms</a>
+  </footer>
+
+</body>
+</html>
