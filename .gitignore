@@ -5,11 +5,11 @@ dist/
 *.local.md
 mcp-server/dist/*
 server/dist/*
-.wrangler/*
-static/.wrangler/*
+.wrangler/
+static/.wrangler/
 server/.dev.vars
-.claude/*
-.claude-plugin/*
-mcp-server/.claude/*
-docs/*
+.claude/
+mcp-server/.claude/
+docs/
 daemon/target/
+project_state.md
