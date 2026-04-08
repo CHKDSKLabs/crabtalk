@@ -1,0 +1,1 @@
+This folder contains the built output assets for the worker "crabtalk-signal" generated at 2026-04-07T21:04:51.703Z.

@@ -2,6 +2,15 @@ import type { Env } from "./auth.js";
 import { createDb } from "./db/index.js";
 import { peers } from "./db/schema.js";
 
+const STALE_TIMEOUT_MS = 90_000;
+const ALARM_INTERVAL_MS = 30_000;
+const MESSAGE_TTL_MS = 60_000;
+
+interface BufferedMessage {
+  msg: unknown;
+  expiresAt: number;
+}
+
 export class SignalingRoom implements DurableObject {
   constructor(
     private readonly state: DurableObjectState,
@@ -16,16 +25,27 @@ export class SignalingRoom implements DurableObject {
     const userId = request.headers.get("X-User-Id")!;
     const deviceName = request.headers.get("X-Device-Name")!;
 
+    this.evictDevice(deviceName);
+
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
 
-    // Tags: [userId, deviceName] — used to identify/route messages
     this.state.acceptWebSocket(server, [userId, deviceName]);
 
-    // Record device registration in Neon (best-effort)
-    this.upsertPeer(userId, deviceName).catch(() => {});
+    await this.state.storage.put(`lastSeen:${deviceName}`, Date.now());
+
+    const currentAlarm = await this.state.storage.getAlarm();
+    if (!currentAlarm) {
+      await this.state.storage.setAlarm(Date.now() + ALARM_INTERVAL_MS);
+    }
+
+    this.upsertPeer(userId, deviceName).catch((err) => {
+      console.error(`[CrabTalk] Failed to upsert peer ${userId}:${deviceName}:`, err);
+    });
 
     this.broadcastPeerList();
+
+    await this.flushBufferedMessages(server, deviceName);
 
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -34,28 +54,138 @@ export class SignalingRoom implements DurableObject {
     try {
       const text = typeof message === "string" ? message : new TextDecoder().decode(message);
       const msg = JSON.parse(text);
-      const targetDevice: string = msg.to;
 
+      const [, senderDevice] = this.state.getTags(ws);
+      if (senderDevice) {
+        await this.state.storage.put(`lastSeen:${senderDevice}`, Date.now());
+      }
+
+      const targetDevice: string = msg.to;
+      if (!targetDevice) return;
+
+      let delivered = false;
       for (const socket of this.state.getWebSockets()) {
         const [, sockDevice] = this.state.getTags(socket);
         if (sockDevice === targetDevice) {
-          socket.send(JSON.stringify(msg));
+          try {
+            socket.send(JSON.stringify(msg));
+            delivered = true;
+          } catch (err) {
+            console.error(`[CrabTalk] Failed to relay to ${targetDevice}:`, err);
+          }
           break;
         }
       }
-    } catch {
-      // Malformed message — drop it
+
+      if (!delivered) {
+        await this.bufferMessage(targetDevice, msg);
+      }
+
+      if (msg.id) {
+        try {
+          ws.send(JSON.stringify({ type: "ack", id: msg.id, delivered }));
+        } catch {
+          // Sender socket died between receive and ack
+        }
+      }
+    } catch (err) {
+      console.error("[CrabTalk] Failed to process WebSocket message:", err);
     }
   }
 
   async webSocketClose(ws: WebSocket, code: number, reason: string): Promise<void> {
-    ws.close(code, reason);
+    try { ws.close(code, reason); } catch { /* already closed */ }
+    const [, deviceName] = this.state.getTags(ws);
+    if (deviceName) {
+      await this.state.storage.delete(`lastSeen:${deviceName}`);
+    }
     this.broadcastPeerList();
   }
 
   async webSocketError(ws: WebSocket): Promise<void> {
-    ws.close(1011, "Internal error");
+    const [, deviceName] = this.state.getTags(ws);
+    console.error(`[CrabTalk] WebSocket error for device: ${deviceName ?? "unknown"}`);
+    try { ws.close(1011, "Internal error"); } catch { /* already closed */ }
+    if (deviceName) {
+      await this.state.storage.delete(`lastSeen:${deviceName}`);
+    }
     this.broadcastPeerList();
+  }
+
+  async alarm(): Promise<void> {
+    const now = Date.now();
+
+    for (const ws of this.state.getWebSockets()) {
+      const [, deviceName] = this.state.getTags(ws);
+      if (!deviceName) continue;
+
+      const lastSeen = await this.state.storage.get<number>(`lastSeen:${deviceName}`);
+      if (lastSeen && now - lastSeen > STALE_TIMEOUT_MS) {
+        console.error(
+          `[CrabTalk] Reaping stale connection: ${deviceName} (idle ${Math.round((now - lastSeen) / 1000)}s)`
+        );
+        try { ws.close(1000, "Stale connection"); } catch { /* already closed */ }
+        await this.state.storage.delete(`lastSeen:${deviceName}`);
+      }
+    }
+
+    const bufferKeys = await this.state.storage.list<BufferedMessage[]>({ prefix: "buffer:" });
+    for (const [key, messages] of bufferKeys) {
+      const alive = messages.filter((m) => m.expiresAt > now);
+      if (alive.length === 0) {
+        await this.state.storage.delete(key);
+      } else if (alive.length < messages.length) {
+        await this.state.storage.put(key, alive);
+      }
+    }
+
+    const hasConnections = this.state.getWebSockets().length > 0;
+    const hasBuffered = (await this.state.storage.list({ prefix: "buffer:" })).size > 0;
+    if (hasConnections || hasBuffered) {
+      await this.state.storage.setAlarm(Date.now() + ALARM_INTERVAL_MS);
+    }
+  }
+
+  private evictDevice(deviceName: string): void {
+    for (const ws of this.state.getWebSockets()) {
+      const [, sockDevice] = this.state.getTags(ws);
+      if (sockDevice === deviceName) {
+        console.error(`[CrabTalk] Evicting duplicate connection: ${deviceName}`);
+        try { ws.close(1000, "Superseded by new connection"); } catch { /* already closed */ }
+      }
+    }
+  }
+
+  private async bufferMessage(targetDevice: string, msg: unknown): Promise<void> {
+    const key = `buffer:${targetDevice}`;
+    const existing = (await this.state.storage.get<BufferedMessage[]>(key)) ?? [];
+    existing.push({ msg, expiresAt: Date.now() + MESSAGE_TTL_MS });
+    await this.state.storage.put(key, existing);
+  }
+
+  private async flushBufferedMessages(ws: WebSocket, deviceName: string): Promise<void> {
+    const key = `buffer:${deviceName}`;
+    const messages = await this.state.storage.get<BufferedMessage[]>(key);
+    if (!messages?.length) return;
+
+    const now = Date.now();
+    let flushed = 0;
+    for (const { msg, expiresAt } of messages) {
+      if (expiresAt > now) {
+        try {
+          ws.send(JSON.stringify(msg));
+          flushed++;
+        } catch (err) {
+          console.error(`[CrabTalk] Failed to flush buffered message to ${deviceName}:`, err);
+          break;
+        }
+      }
+    }
+
+    await this.state.storage.delete(key);
+    if (flushed > 0) {
+      console.log(`[CrabTalk] Flushed ${flushed} buffered message(s) to ${deviceName}`);
+    }
   }
 
   private broadcastPeerList(): void {
@@ -70,8 +200,8 @@ export class SignalingRoom implements DurableObject {
     for (const ws of sockets) {
       try {
         ws.send(msg);
-      } catch {
-        // Socket already gone, move on
+      } catch (err) {
+        console.error("[CrabTalk] Failed to broadcast peer list:", err);
       }
     }
   }

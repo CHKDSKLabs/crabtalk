@@ -33,9 +33,48 @@ export function createAuth(env: Env) {
         clientSecret: env.GOOGLE_CLIENT_SECRET,
       },
     },
+    session: {
+      expiresIn: 60 * 60 * 24,
+      updateAge: 60 * 60,
+    },
     trustedOrigins: (env.TRUSTED_ORIGINS || "").split(",").filter(Boolean),
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.BETTER_AUTH_URL,
     plugins: [bearer()],
+    databaseHooks: {
+      account: {
+        create: {
+          before: async (account) => ({
+            data: {
+              ...account,
+              accessToken: null,
+              refreshToken: null,
+              idToken: null,
+            },
+          }),
+        },
+        update: {
+          before: async (account) => ({
+            data: {
+              ...account,
+              accessToken: null,
+              refreshToken: null,
+              idToken: null,
+            },
+          }),
+        },
+      },
+      session: {
+        create: {
+          before: async (session) => ({
+            data: {
+              ...session,
+              ipAddress: null,
+              userAgent: null,
+            },
+          }),
+        },
+      },
+    },
   });
 }
