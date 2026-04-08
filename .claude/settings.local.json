@@ -22,7 +22,11 @@
       "Bash(curl:*)",
       "Skill(crabtalk:status)",
       "mcp__crabtalk__get-status",
-      "mcp__crabtalk__sync-now"
+      "mcp__crabtalk__sync-now",
+      "Bash(echo \"exit: $?\")",
+      "Bash(npm ls:*)",
+      "Bash(npm install:*)",
+      "Bash(npx wrangler:*)"
     ]
   }
 }
