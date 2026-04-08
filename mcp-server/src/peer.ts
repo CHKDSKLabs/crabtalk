@@ -3,7 +3,8 @@ import type { SignalMessage, FileManifestEntry } from "./types.js";
 
 const { PeerConnection, DataChannel, DescriptionType } = nodeDataChannel;
 
-const CHUNK_SIZE = 64 * 1024; // 64KB — well under any WebRTC implementation's message size limit
+const CHUNK_SIZE = 15 * 1024; // 15KB — must fit inside SCTP max message size (default 64KB) with JSON envelope overhead
+const MAX_MESSAGE_SIZE = 60 * 1024; // 60KB — safe ceiling for any single data channel message
 
 type SendSignal = (msg: SignalMessage) => void;
 type OnFileReceived = (path: string, content: Buffer, entry: FileManifestEntry) => void;
@@ -25,6 +26,8 @@ export class PeerConnection_ {
   private localDeviceName: string;
   private remoteDeviceName: string;
   private inboundFiles = new Map<string, InboundFile>();
+  private inboundManifestChunks: Array<[string, FileManifestEntry][]> = [];
+  private expectedManifestChunks = 0;
 
   connected = false;
   private offerSent = false;
@@ -97,11 +100,24 @@ export class PeerConnection_ {
 
   sendManifest(manifest: Map<string, FileManifestEntry>): void {
     if (!this.dc) return;
-    const serialized = JSON.stringify({
-      type: "manifest",
-      entries: Array.from(manifest.entries()),
-    });
-    this.dc.sendMessage(serialized);
+    const entries = Array.from(manifest.entries());
+    const full = JSON.stringify({ type: "manifest", entries });
+
+    if (full.length <= MAX_MESSAGE_SIZE) {
+      this.dc.sendMessage(full);
+      return;
+    }
+
+    const totalChunks = Math.ceil(entries.length / 50) || 1;
+    for (let i = 0; i < totalChunks; i++) {
+      const slice = entries.slice(i * 50, (i + 1) * 50);
+      this.dc.sendMessage(JSON.stringify({
+        type: "manifest-chunk",
+        chunkIndex: i,
+        totalChunks,
+        entries: slice,
+      }));
+    }
   }
 
   sendFile(path: string, content: Buffer, entry: FileManifestEntry): void {
@@ -151,6 +167,20 @@ export class PeerConnection_ {
         if (data.type === "manifest") {
           const manifest = new Map<string, FileManifestEntry>(data.entries);
           this.onManifestReceived(manifest);
+        } else if (data.type === "manifest-chunk") {
+          if (data.chunkIndex === 0) {
+            this.inboundManifestChunks = new Array(data.totalChunks);
+            this.expectedManifestChunks = data.totalChunks;
+          }
+          this.inboundManifestChunks[data.chunkIndex] = data.entries;
+          const received = this.inboundManifestChunks.filter(Boolean).length;
+          if (received === this.expectedManifestChunks) {
+            const allEntries = this.inboundManifestChunks.flat();
+            const manifest = new Map<string, FileManifestEntry>(allEntries);
+            this.inboundManifestChunks = [];
+            this.expectedManifestChunks = 0;
+            this.onManifestReceived(manifest);
+          }
         } else if (data.type === "file-chunk") {
           let inbound = this.inboundFiles.get(data.path);
           if (!inbound) {
