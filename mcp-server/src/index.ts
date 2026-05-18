@@ -243,20 +243,20 @@ server.registerTool(
       };
     }
 
-    const resolved = await engine.resolveConflict(filePath, resolution, manualContent);
+    const result = await engine.resolveConflict(filePath, resolution, manualContent);
 
-    if (!resolved) {
+    if (!result.resolved) {
       return {
         content: [
           {
             type: "text" as const,
-            text: `No conflict found for ${filePath}.`,
+            text: result.error || `No conflict found for ${filePath}.`,
           },
         ],
       };
     }
 
-    const remaining = (await engine.getConflicts()).length;
+    const remaining = result.remaining ?? (await engine.getConflicts()).length;
     return {
       content: [
         {

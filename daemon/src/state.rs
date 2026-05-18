@@ -12,6 +12,7 @@ pub struct DaemonState {
     pub connected_peers: Vec<String>,
     pub manifest: HashMap<String, FileManifestEntry>,
     pub conflicts: ConflictStore,
+    pub last_sync_time: Option<u64>,
 }
 
 impl DaemonState {
@@ -22,6 +23,7 @@ impl DaemonState {
             connected_peers: Vec::new(),
             manifest: HashMap::new(),
             conflicts: ConflictStore::new(),
+            last_sync_time: None,
         }
     }
 }

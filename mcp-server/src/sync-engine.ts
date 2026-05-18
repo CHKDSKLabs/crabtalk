@@ -1,6 +1,13 @@
 import { DaemonClient } from "./daemon-client.js";
 import type { CrabTalkConfig, SyncConflict, SyncStatus } from "./types.js";
 
+export interface ResolveConflictResult {
+  resolved: boolean;
+  remaining?: number;
+  conflict?: SyncConflict;
+  error?: string;
+}
+
 export class SyncEngine {
   private client: DaemonClient;
   private config: CrabTalkConfig;
@@ -39,7 +46,24 @@ export class SyncEngine {
   }
 
   async syncNow(): Promise<{ synced: number; conflicts: number }> {
+    const complete = this.client.waitForEvent((event) => event.event === "sync-complete").catch(() => null);
     const res = await this.client.sendCommand({ cmd: "sync-now" });
+    if (res.error) {
+      throw new Error(res.error);
+    }
+
+    if (res.queued === false || res.connectedPeers === 0) {
+      return { synced: 0, conflicts: 0 };
+    }
+
+    const event = await complete;
+    if (event) {
+      return {
+        synced: event.synced ?? 0,
+        conflicts: event.conflicts ?? 0,
+      };
+    }
+
     return {
       synced: res.synced ?? 0,
       conflicts: res.conflicts ?? 0,
@@ -55,13 +79,13 @@ export class SyncEngine {
     path: string,
     resolution: "local" | "remote" | "manual",
     manualContent?: string
-  ): Promise<SyncConflict | undefined> {
+  ): Promise<ResolveConflictResult> {
     const res = await this.client.sendCommand({
       cmd: "resolve-conflict",
       path,
       resolution,
       content: manualContent,
     });
-    return res.conflict ?? undefined;
+    return res as ResolveConflictResult;
   }
 }

@@ -29,7 +29,6 @@ pub fn load_config() -> Result<CrabTalkConfig, Box<dyn std::error::Error>> {
 pub fn save_config(config: &CrabTalkConfig) -> Result<(), Box<dyn std::error::Error>> {
     let path = config_path()?;
     let json = serde_json::to_string_pretty(config)?;
-    std::fs::write(&path, json)
-        .map_err(|e| format!("failed to write {}: {e}", path.display()))?;
+    std::fs::write(&path, json).map_err(|e| format!("failed to write {}: {e}", path.display()))?;
     Ok(())
 }
