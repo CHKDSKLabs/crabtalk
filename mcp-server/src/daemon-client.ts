@@ -13,10 +13,18 @@ interface PendingCommand {
   timer: ReturnType<typeof setTimeout>;
 }
 
+interface PendingEvent {
+  predicate: (event: any) => boolean;
+  resolve: (value: any) => void;
+  reject: (reason: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
 export class DaemonClient {
   private socket: Socket | null = null;
   private buffer = "";
   private pending = new Map<string, PendingCommand>();
+  private pendingEvents = new Set<PendingEvent>();
   private eventCallbacks: Array<(event: any) => void> = [];
   private connected = false;
   private reconnectAttempt = 0;
@@ -51,6 +59,7 @@ export class DaemonClient {
     this.socket = null;
     this.connected = false;
     this.rejectAllPending(new Error("Disconnected."));
+    this.rejectAllPendingEvents(new Error("Disconnected."));
   }
 
   async sendCommand(cmd: object): Promise<any> {
@@ -68,6 +77,24 @@ export class DaemonClient {
 
       this.pending.set(requestId, { resolve, reject, timer });
       this.socket!.write(JSON.stringify({ requestId, ...cmd }) + "\n");
+    });
+  }
+
+  async waitForEvent(
+    predicate: (event: any) => boolean,
+    timeoutMs = COMMAND_TIMEOUT_MS
+  ): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const pending: PendingEvent = {
+        predicate,
+        resolve,
+        reject,
+        timer: setTimeout(() => {
+          this.pendingEvents.delete(pending);
+          reject(new Error(`Timed out waiting for daemon event after ${timeoutMs}ms.`));
+        }, timeoutMs),
+      };
+      this.pendingEvents.add(pending);
     });
   }
 
@@ -100,6 +127,7 @@ export class DaemonClient {
       this.connected = false;
       this.socket = null;
       this.rejectAllPending(new Error("Daemon connection closed unexpectedly."));
+      this.rejectAllPendingEvents(new Error("Daemon connection closed unexpectedly."));
       if (!this.destroyed) this.scheduleReconnect();
     });
 
@@ -113,8 +141,16 @@ export class DaemonClient {
       const entry = this.pending.get(msg.requestId)!;
       clearTimeout(entry.timer);
       this.pending.delete(msg.requestId);
-      entry.resolve(msg);
+      entry.resolve("result" in msg ? msg.result : msg);
     } else if (msg.event) {
+      for (const pending of Array.from(this.pendingEvents)) {
+        if (pending.predicate(msg)) {
+          clearTimeout(pending.timer);
+          this.pendingEvents.delete(pending);
+          pending.resolve(msg);
+        }
+      }
+
       for (const cb of this.eventCallbacks) {
         try {
           cb(msg);
@@ -122,6 +158,14 @@ export class DaemonClient {
           console.error("[CrabTalk] Event callback threw:", err);
         }
       }
+    }
+  }
+
+  private rejectAllPendingEvents(err: Error): void {
+    for (const entry of this.pendingEvents) {
+      clearTimeout(entry.timer);
+      entry.reject(err);
+      this.pendingEvents.delete(entry);
     }
   }
 

@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -42,6 +42,10 @@ impl ConflictStore {
         }
     }
 
+    pub fn get(&self, path: &str) -> Option<&SyncConflict> {
+        self.conflicts.iter().find(|c| c.path == path)
+    }
+
     pub fn resolve(
         &mut self,
         path: &str,
@@ -49,10 +53,20 @@ impl ConflictStore {
         manual_content: Option<&str>,
         claude_dir: &Path,
     ) -> Option<SyncConflict> {
-        let pos = self.conflicts.iter().position(|c| c.path == path)?;
-        let conflict = self.conflicts.remove(pos);
+        if !matches!(resolution, "local" | "remote" | "manual") {
+            return None;
+        }
+        if resolution == "manual" && manual_content.is_none() {
+            return None;
+        }
 
-        let full_path = claude_dir.join(path);
+        let full_path = safe_claude_path(claude_dir, path)?;
+        let pos = self.conflicts.iter().position(|c| c.path == path)?;
+        if resolution == "remote" && self.conflicts[pos].remote_content.is_empty() {
+            return None;
+        }
+
+        let conflict = self.conflicts.remove(pos);
 
         match resolution {
             "remote" => {
@@ -84,5 +98,96 @@ impl ConflictStore {
 
     pub fn len(&self) -> usize {
         self.conflicts.len()
+    }
+}
+
+fn safe_claude_path(claude_dir: &Path, path: &str) -> Option<PathBuf> {
+    if path.is_empty() || path.contains('\\') {
+        return None;
+    }
+
+    let mut clean = PathBuf::new();
+    for component in Path::new(path).components() {
+        match component {
+            Component::Normal(part) => clean.push(part),
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => return None,
+        }
+    }
+
+    if clean.as_os_str().is_empty() {
+        return None;
+    }
+
+    Some(claude_dir.join(clean))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_dir() -> PathBuf {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock before epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("crabtalk-conflicts-test-{suffix}"))
+    }
+
+    fn conflict(path: &str) -> SyncConflict {
+        SyncConflict {
+            path: path.to_string(),
+            local_hash: "local".to_string(),
+            remote_hash: "remote".to_string(),
+            local_modified_at: 1,
+            remote_modified_at: 2,
+            local_device_name: "local-device".to_string(),
+            remote_device_name: "remote-device".to_string(),
+            local_content: "local".to_string(),
+            remote_content: "remote".to_string(),
+        }
+    }
+
+    #[test]
+    fn remote_resolution_writes_remote_content() {
+        let dir = temp_dir();
+        let mut store = ConflictStore::new();
+        store.add(conflict("settings.json"));
+
+        let resolved = store.resolve("settings.json", "remote", None, &dir);
+
+        assert!(resolved.is_some());
+        assert_eq!(
+            std::fs::read_to_string(dir.join("settings.json")).unwrap(),
+            "remote"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn invalid_manual_resolution_keeps_conflict() {
+        let dir = temp_dir();
+        let mut store = ConflictStore::new();
+        store.add(conflict("settings.json"));
+
+        let resolved = store.resolve("settings.json", "manual", None, &dir);
+
+        assert!(resolved.is_none());
+        assert_eq!(store.len(), 1);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn unsafe_paths_are_rejected_without_removing_conflict() {
+        let dir = temp_dir();
+        let mut store = ConflictStore::new();
+        store.add(conflict("../outside.txt"));
+
+        let resolved = store.resolve("../outside.txt", "remote", None, &dir);
+
+        assert!(resolved.is_none());
+        assert_eq!(store.len(), 1);
+        assert!(!dir.join("../outside.txt").exists());
     }
 }

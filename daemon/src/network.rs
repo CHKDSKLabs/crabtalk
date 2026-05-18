@@ -4,11 +4,9 @@ use std::time::Duration;
 use base64::prelude::*;
 use futures::prelude::*;
 use libp2p::{
-    identity,
-    mdns,
+    Multiaddr, PeerId, SwarmBuilder, identity, mdns,
     request_response::{self, ProtocolSupport},
     swarm::{NetworkBehaviour, SwarmEvent},
-    Multiaddr, PeerId, SwarmBuilder,
 };
 use tokio::sync::{broadcast, mpsc};
 use tracing::{info, warn};
@@ -68,21 +66,15 @@ pub async fn run(
         .ok_or("could not resolve home directory")?
         .join(".claude");
 
-    let sync_manager = SyncManager::new(
-        config.clone(),
-        claude_dir,
-        state.clone(),
-        event_tx.clone(),
-    );
+    let sync_manager =
+        SyncManager::new(config.clone(), claude_dir, state.clone(), event_tx.clone());
 
     let mut swarm = SwarmBuilder::with_existing_identity(keypair)
         .with_tokio()
         .with_quic()
         .with_behaviour(|key| {
-            let mdns = mdns::tokio::Behaviour::new(
-                mdns::Config::default(),
-                key.public().to_peer_id(),
-            )?;
+            let mdns =
+                mdns::tokio::Behaviour::new(mdns::Config::default(), key.public().to_peer_id())?;
 
             let manifest_rr = request_response::Behaviour::new(
                 [(ManifestCodec::protocol(), ProtocolSupport::Full)],
@@ -94,7 +86,11 @@ pub async fn run(
                 request_response::Config::default(),
             );
 
-            Ok(CrabTalkBehaviour { mdns, manifest_rr, file_rr })
+            Ok(CrabTalkBehaviour {
+                mdns,
+                manifest_rr,
+                file_rr,
+            })
         })
         .map_err(|e| format!("failed to build swarm: {e}"))?
         .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(120)))
@@ -207,20 +203,31 @@ pub async fn run(
                     let response = sync_manager.handle_manifest_request(entries).await;
 
                     let conflicts_count = response.0.conflicts.len() as u32;
-                    let sending_count = response.0.sending.len();
+                    let request_paths: Vec<String> = response
+                        .0
+                        .need
+                        .iter()
+                        .chain(response.0.conflicts.iter())
+                        .cloned()
+                        .collect();
+                    let need_count = request_paths.len();
 
                     if let Err(e) = swarm.behaviour_mut().manifest_rr.send_response(channel, response) {
                         warn!(%peer, "failed to send manifest response: {e:?}");
                         continue;
                     }
 
-                    // sending = files we'll send them; they'll request each one
-                    // Track expected incoming file requests from this peer (they need from us)
-                    // We track outbound sends the peer will request from us: no action needed here,
-                    // they will send FileRequest events. But we do track how many files we expect
-                    // to receive from them for SyncComplete accounting.
-                    // We'll update counts when the manifest response comes back on their side.
-                    let _ = (sending_count, conflicts_count);
+                    if need_count == 0 {
+                        sync_manager.finish_sync(0, conflicts_count).await;
+                    } else {
+                        pending_file_counts.insert(peer, (need_count, 0, conflicts_count));
+                        for path in request_paths {
+                            swarm.behaviour_mut().file_rr.send_request(
+                                &peer,
+                                FileRequestMsg(crate::protocol::FileRequest { path }),
+                            );
+                        }
+                    }
                 }
 
                 SwarmEvent::Behaviour(CrabTalkBehaviourEvent::ManifestRr(
@@ -230,7 +237,7 @@ pub async fn run(
                     },
                 )) => {
                     let conflicts = response.0.conflicts.len() as u32;
-                    let need_count = response.0.sending.len(); // files they're sending = we request
+                    let need_count = response.0.sending.len() + response.0.conflicts.len(); // files we request from them
 
                     pending_file_counts.insert(peer, (need_count, 0, conflicts));
 

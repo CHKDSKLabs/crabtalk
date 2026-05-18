@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use futures::prelude::*;
-use libp2p::{request_response, StreamProtocol};
+use libp2p::{StreamProtocol, request_response};
 use serde::{Deserialize, Serialize};
 
 use crate::types::FileManifestEntry;
@@ -38,7 +38,11 @@ impl request_response::Codec for ManifestCodec {
     type Request = ManifestRequest;
     type Response = ManifestResponse;
 
-    async fn read_request<T>(&mut self, _: &StreamProtocol, io: &mut T) -> std::io::Result<ManifestRequest>
+    async fn read_request<T>(
+        &mut self,
+        _: &StreamProtocol,
+        io: &mut T,
+    ) -> std::io::Result<ManifestRequest>
     where
         T: AsyncRead + Unpin + Send,
     {
@@ -48,7 +52,11 @@ impl request_response::Codec for ManifestCodec {
         Ok(ManifestRequest(entries))
     }
 
-    async fn read_response<T>(&mut self, _: &StreamProtocol, io: &mut T) -> std::io::Result<ManifestResponse>
+    async fn read_response<T>(
+        &mut self,
+        _: &StreamProtocol,
+        io: &mut T,
+    ) -> std::io::Result<ManifestResponse>
     where
         T: AsyncRead + Unpin + Send,
     {
@@ -58,7 +66,12 @@ impl request_response::Codec for ManifestCodec {
         Ok(ManifestResponse(diff))
     }
 
-    async fn write_request<T>(&mut self, _: &StreamProtocol, io: &mut T, ManifestRequest(entries): ManifestRequest) -> std::io::Result<()>
+    async fn write_request<T>(
+        &mut self,
+        _: &StreamProtocol,
+        io: &mut T,
+        ManifestRequest(entries): ManifestRequest,
+    ) -> std::io::Result<()>
     where
         T: AsyncWrite + Unpin + Send,
     {
@@ -67,7 +80,12 @@ impl request_response::Codec for ManifestCodec {
         write_length_prefixed(io, &bytes).await
     }
 
-    async fn write_response<T>(&mut self, _: &StreamProtocol, io: &mut T, ManifestResponse(diff): ManifestResponse) -> std::io::Result<()>
+    async fn write_response<T>(
+        &mut self,
+        _: &StreamProtocol,
+        io: &mut T,
+        ManifestResponse(diff): ManifestResponse,
+    ) -> std::io::Result<()>
     where
         T: AsyncWrite + Unpin + Send,
     {
@@ -108,7 +126,11 @@ impl request_response::Codec for FileCodec {
     type Request = FileRequestMsg;
     type Response = FileResponseMsg;
 
-    async fn read_request<T>(&mut self, _: &StreamProtocol, io: &mut T) -> std::io::Result<FileRequestMsg>
+    async fn read_request<T>(
+        &mut self,
+        _: &StreamProtocol,
+        io: &mut T,
+    ) -> std::io::Result<FileRequestMsg>
     where
         T: AsyncRead + Unpin + Send,
     {
@@ -118,7 +140,11 @@ impl request_response::Codec for FileCodec {
         Ok(FileRequestMsg(req))
     }
 
-    async fn read_response<T>(&mut self, _: &StreamProtocol, io: &mut T) -> std::io::Result<FileResponseMsg>
+    async fn read_response<T>(
+        &mut self,
+        _: &StreamProtocol,
+        io: &mut T,
+    ) -> std::io::Result<FileResponseMsg>
     where
         T: AsyncRead + Unpin + Send,
     {
@@ -140,7 +166,12 @@ impl request_response::Codec for FileCodec {
         Ok(FileResponseMsg { entry, content })
     }
 
-    async fn write_request<T>(&mut self, _: &StreamProtocol, io: &mut T, FileRequestMsg(req): FileRequestMsg) -> std::io::Result<()>
+    async fn write_request<T>(
+        &mut self,
+        _: &StreamProtocol,
+        io: &mut T,
+        FileRequestMsg(req): FileRequestMsg,
+    ) -> std::io::Result<()>
     where
         T: AsyncWrite + Unpin + Send,
     {
@@ -149,7 +180,12 @@ impl request_response::Codec for FileCodec {
         write_length_prefixed(io, &bytes).await
     }
 
-    async fn write_response<T>(&mut self, _: &StreamProtocol, io: &mut T, resp: FileResponseMsg) -> std::io::Result<()>
+    async fn write_response<T>(
+        &mut self,
+        _: &StreamProtocol,
+        io: &mut T,
+        resp: FileResponseMsg,
+    ) -> std::io::Result<()>
     where
         T: AsyncWrite + Unpin + Send,
     {

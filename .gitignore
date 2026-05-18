@@ -10,6 +10,7 @@ static/.wrangler/
 server/.dev.vars
 .claude/
 mcp-server/.claude/
-docs/
+docs/*
+!docs/production-operator-steps.md
 daemon/target/
 project_state.md

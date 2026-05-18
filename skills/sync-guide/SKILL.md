@@ -9,7 +9,7 @@ allowed-tools:
 
 # CrabTalk Sync Guide
 
-CrabTalk provides peer-to-peer configuration sync between machines running Claude Code. No central server ever touches file contents — data flows directly between devices over encrypted WebRTC data channels.
+CrabTalk provides peer-to-peer configuration sync between machines running Claude Code. No central server ever touches file contents — data flows directly between devices over encrypted libp2p QUIC streams.
 
 ## What Syncs
 
@@ -32,10 +32,10 @@ CrabTalk provides peer-to-peer configuration sync between machines running Claud
 
 ### Architecture
 
-1. **BetterAuth + Neon PostgreSQL** handles user accounts (email/password or Google OAuth)
-2. **Signal server** (Neon serverless, Cloudflare Workers if needed) brokers peer discovery and WebRTC handshake — it never sees file contents
-3. **WebRTC data channels** carry file data directly between peers, encrypted via DTLS
-4. **MCP server** (runs locally during Claude Code session) manages file watching, sync logic, and conflict detection
+1. **BetterAuth + Neon PostgreSQL** handles user accounts and session tokens
+2. **Rendezvous server** stores authenticated device presence and libp2p multiaddrs for peer discovery — it never sees file contents
+3. **Rust daemon** watches files and transfers data directly between peers over encrypted libp2p QUIC request/response streams
+4. **MCP server** connects Claude Code commands to the local daemon over IPC
 
 ### Sync Protocol
 
@@ -43,7 +43,7 @@ Each peer maintains a manifest: a map of file paths to content hashes and modifi
 
 1. Exchange manifests
 2. Diff to find files that changed on one or both sides
-3. Transfer changed files directly over WebRTC data channel
+3. Transfer changed files directly over libp2p file request/response streams
 4. If the same file changed on both peers since last sync, flag as conflict
 
 Changes are batched on a short interval (a few seconds) to avoid thrashing during rapid edits.
@@ -54,19 +54,18 @@ A conflict occurs when the same file is modified on two devices between syncs. C
 
 ### Security
 
-- **Transport encryption**: WebRTC data channels use mandatory DTLS encryption
-- **No data on server**: The signal server only relays WebRTC signaling metadata (SDP offers/answers, ICE candidates). File contents never leave the P2P channel.
-- **Authentication**: BetterAuth session tokens validate peer identity through the signal server
+- **Transport encryption**: libp2p QUIC encrypts peer-to-peer streams
+- **No data on server**: The rendezvous server stores account-scoped peer addresses. File contents never leave the P2P channel.
+- **Authentication**: BetterAuth session tokens validate peer identity through the rendezvous server
 - **No TURN fallback**: Data always flows peer-to-peer. If NAT prevents direct connection, sync will not fall back to relaying through a server.
 
 ### Peer Discovery
 
-- Each device registers with the signal server via WebSocket
-- Signal server maintains presence for each user ID
-- When a new peer comes online, existing peers are notified
-- WebRTC handshake is brokered through the signal server
-- After handshake, communication is direct P2P
-- Heartbeat every 30 seconds to maintain presence
+- Each device registers its libp2p listen addresses with the rendezvous server
+- The rendezvous server returns recently seen peers scoped to the same user ID
+- Devices also use mDNS for local-network discovery
+- After discovery, communication is direct P2P
+- Devices refresh rendezvous presence every few minutes
 
 ### Device Names
 
@@ -76,10 +75,10 @@ Each device is assigned a random crab species name on first setup (Fiddler, Herm
 
 ### Sync Not Working
 
-1. Check status with `/crabtalk:status` — verify signal server connection
+1. Check status with `/crabtalk:status` — verify daemon connection and peer list
 2. Ensure both devices are online and signed into the same CrabTalk account
 3. Confirm the MCP server is running (restart Claude Code if needed)
-4. Check network — WebRTC requires peers to establish a direct connection. Restrictive NATs or corporate firewalls may block this.
+4. Check network — peers must be able to dial each other's libp2p QUIC addresses. Restrictive NATs or corporate firewalls may block this.
 
 ### Conflicts Appearing Unexpectedly
 

@@ -24,7 +24,6 @@ pub struct IpcRequest {
 pub struct IpcResponse {
     #[serde(rename = "requestId", skip_serializing_if = "Option::is_none")]
     pub request_id: Option<String>,
-    #[serde(flatten)]
     pub result: Value,
 }
 
@@ -44,7 +43,9 @@ mod transport {
             let server = ServerOptions::new()
                 .first_pipe_instance(true)
                 .create(PIPE_NAME)?;
-            Ok(Listener { pending: Some(server) })
+            Ok(Listener {
+                pending: Some(server),
+            })
         }
 
         pub async fn accept(&mut self) -> io::Result<NamedPipeServer> {
@@ -80,7 +81,9 @@ mod transport {
             if path.exists() {
                 std::fs::remove_file(&path)?;
             }
-            Ok(Listener { inner: UnixListener::bind(path)? })
+            Ok(Listener {
+                inner: UnixListener::bind(path)?,
+            })
         }
 
         pub async fn accept(&mut self) -> io::Result<UnixStream> {
@@ -104,20 +107,27 @@ async fn dispatch(
                 "peerId": s.peer_id,
                 "listenAddrs": s.listen_addrs,
                 "connected": !s.connected_peers.is_empty(),
-                "peers": s.connected_peers
+                "peers": s.connected_peers,
+                "lastSyncTime": s.last_sync_time,
+                "pendingLocalChanges": 0,
+                "pendingRemoteChanges": 0,
+                "unresolvedConflicts": s.conflicts.len()
             })
         }
         IpcCommand::GetManifest => {
             let s = state.read().await;
-            serde_json::to_value(&s.manifest).unwrap_or_else(|e| {
-                serde_json::json!({ "error": format!("failed to serialize manifest: {e}") })
-            })
+            serde_json::to_value(&s.manifest).unwrap_or_else(
+                |e| serde_json::json!({ "error": format!("failed to serialize manifest: {e}") }),
+            )
         }
         IpcCommand::SyncNow => {
+            let connected_peers = state.read().await.connected_peers.len();
             match sync_tx.try_send(()) {
-                Ok(()) => serde_json::json!({ "ok": true }),
+                Ok(()) => {
+                    serde_json::json!({ "ok": true, "queued": connected_peers > 0, "connectedPeers": connected_peers })
+                }
                 Err(mpsc::error::TrySendError::Full(_)) => {
-                    serde_json::json!({ "ok": true, "note": "sync already queued" })
+                    serde_json::json!({ "ok": true, "queued": true, "connectedPeers": connected_peers, "note": "sync already queued" })
                 }
                 Err(mpsc::error::TrySendError::Closed(_)) => {
                     serde_json::json!({ "error": "network loop unavailable" })
@@ -127,19 +137,48 @@ async fn dispatch(
         IpcCommand::GetConflicts => {
             let s = state.read().await;
             let conflicts: Vec<_> = s.conflicts.list(None).into_iter().collect();
-            serde_json::to_value(&conflicts).unwrap_or_else(|e| {
-                serde_json::json!({ "error": format!("failed to serialize conflicts: {e}") })
-            })
+            serde_json::to_value(&serde_json::json!({ "conflicts": conflicts })).unwrap_or_else(
+                |e| serde_json::json!({ "error": format!("failed to serialize conflicts: {e}") }),
+            )
         }
-        IpcCommand::ResolveConflict { path, resolution, content } => {
+        IpcCommand::ResolveConflict {
+            path,
+            resolution,
+            content,
+        } => {
+            if !matches!(resolution.as_str(), "local" | "remote" | "manual") {
+                return serde_json::json!({ "resolved": false, "error": "resolution must be local, remote, or manual" });
+            }
+
+            if resolution == "manual" && content.as_deref().unwrap_or("").is_empty() {
+                return serde_json::json!({ "resolved": false, "error": "manual resolution requires content" });
+            }
+
             let claude_dir = dirs::home_dir()
                 .expect("home dir unavailable")
                 .join(".claude");
 
             let mut s = state.write().await;
+            if resolution == "remote" {
+                match s.conflicts.get(&path) {
+                    Some(conflict) if !conflict.remote_content.is_empty() => {}
+                    Some(_) => {
+                        return serde_json::json!({ "resolved": false, "error": "remote content has not been received yet" });
+                    }
+                    None => {
+                        return serde_json::json!({ "resolved": false, "error": "no conflict found" });
+                    }
+                }
+            }
+
             let remaining = s.conflicts.len().saturating_sub(1);
-            match s.conflicts.resolve(&path, &resolution, content.as_deref(), &claude_dir) {
-                Some(_) => serde_json::json!({ "resolved": true, "remaining": remaining }),
+            match s
+                .conflicts
+                .resolve(&path, &resolution, content.as_deref(), &claude_dir)
+            {
+                Some(conflict) => {
+                    serde_json::json!({ "resolved": true, "remaining": remaining, "conflict": conflict })
+                }
                 None => serde_json::json!({ "resolved": false, "error": "no conflict found" }),
             }
         }
@@ -152,8 +191,7 @@ async fn handle_client<S>(
     cfg: CrabTalkConfig,
     state: SharedState,
     sync_tx: mpsc::Sender<()>,
-)
-where
+) where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
     let mut event_rx = event_tx.subscribe();

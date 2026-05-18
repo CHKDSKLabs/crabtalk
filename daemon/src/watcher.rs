@@ -23,16 +23,15 @@ impl FileWatcher {
         let (manifest_tx, manifest_rx) = watch::channel(initial_manifest);
         let (notify_tx, mut notify_rx) = tokio::sync::mpsc::unbounded_channel::<PathBuf>();
 
-        let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-            match res {
+        let mut watcher =
+            notify::recommended_watcher(move |res: notify::Result<notify::Event>| match res {
                 Ok(event) => {
                     for path in event.paths {
                         let _ = notify_tx.send(path);
                     }
                 }
                 Err(e) => warn!("file watcher error: {e}"),
-            }
-        })?;
+            })?;
 
         for sync_path in &sync_paths {
             let full_path = claude_dir.join(sync_path);
@@ -75,7 +74,10 @@ impl FileWatcher {
 
                 match result {
                     Ok(manifest) => {
-                        info!(entries = manifest.len(), "manifest rebuilt after file changes");
+                        info!(
+                            entries = manifest.len(),
+                            "manifest rebuilt after file changes"
+                        );
                         if manifest_tx.send(manifest).is_err() {
                             error!("manifest channel closed, watcher shutting down");
                             break;

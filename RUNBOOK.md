@@ -5,30 +5,28 @@ Comprehensive guide to deploying, configuring, and operating CrabTalk.
 ## Architecture Overview
 
 ```
-┌──────────────┐     WebSocket         ┌───────────────────┐     WebSocket      ┌──────────────┐
-│  Machine A   │◄─────────────────────►│   Signal Server   │◄──────────────────►│  Machine B   │
-│              │    (signaling)        │  (Neon + Hono)    │    (signaling)     │              │
-│  MCP Server  │                       │                   │                    │  MCP Server  │
-│  + Chokidar  │                       │  BetterAuth       │                    │  + Chokidar  │
-│  + WebRTC    │◄──────────────────────┼───────────────────┼───────────────────►│  + WebRTC    │
-│              │   P2P Data Channel    │                   │  P2P Data Channel  │              │
-└──────────────┘    (DTLS encrypted)   └───────────────────┘   (DTLS encrypted) └──────────────┘
+┌──────────────┐   HTTPS rendezvous    ┌───────────────────┐   HTTPS rendezvous ┌──────────────┐
+│  Machine A   │◄─────────────────────►│ Rendezvous Server │◄──────────────────►│  Machine B   │
+│              │                       │  (Neon + Hono)    │                    │              │
+│  MCP Server  │                       │  BetterAuth       │                    │  MCP Server  │
+│  + Daemon    │◄──────────────────────┼───────────────────┼───────────────────►│  + Daemon    │
+│  + notify    │       libp2p QUIC     │                   │      libp2p QUIC   │  + notify    │
+└──────────────┘    (encrypted P2P)    └───────────────────┘   (encrypted P2P)  └──────────────┘
 ```
 
 **Data flow:**
-1. Both machines connect to the signal server via WebSocket
-2. Signal server authenticates via BetterAuth session tokens
-3. Signal server brokers WebRTC handshake (SDP + ICE candidates)
-4. Machines establish a direct P2P data channel (DTLS encrypted)
+1. Each daemon registers its libp2p listen addresses with the rendezvous server over HTTPS
+2. The rendezvous server authenticates requests via BetterAuth bearer session tokens
+3. Daemons fetch recently seen peers for the same user and dial them directly
+4. Machines establish encrypted libp2p QUIC streams
 5. File manifests are exchanged, diffs computed, files transferred
-6. Signal server never sees file contents
+6. The rendezvous server never sees file contents
 
 ## Prerequisites
 
 - Node.js >= 18
 - A [Neon](https://neon.tech) PostgreSQL database
-- A Google Cloud project (for Google OAuth — optional but recommended)
-- A domain or host for the signal server (Cloudflare Workers, Railway, Fly, etc.)
+- A domain or host for the rendezvous server (Cloudflare Workers, Railway, Fly, etc.)
 
 ## 1. Database Setup (Neon)
 
@@ -203,7 +201,7 @@ Run `/crabtalk:status`. You should see:
 
 ### Sync happens automatically
 
-- File changes in watched paths are detected by Chokidar
+- File changes in watched paths are detected by the Rust `notify` watcher
 - Changes are batched (3-second debounce) and pushed to connected peers
 - No manual action needed for normal operation
 
@@ -271,18 +269,18 @@ $env:CRABTALK_SIGNAL_URL = "https://your-signal-server.com"
 
 **Fix:** Run `/crabtalk:setup` again to re-authenticate.
 
-### Signal server unreachable
+### Rendezvous server unreachable
 
 **Cause:** Network issue or server is down.
 
 **Fix:**
-1. Check the signal server health: `curl https://your-signal-server.com/health`
+1. Check the rendezvous server health: `curl https://your-rendezvous-server.com/health`
 2. Verify `CRABTALK_SIGNAL_URL` is correct
 3. Check firewall/proxy settings
 
 ### Peers can't establish P2P connection
 
-**Cause:** Restrictive NAT or corporate firewall blocking WebRTC.
+**Cause:** Restrictive NAT or corporate firewall blocking direct libp2p QUIC traffic.
 
 **Fix:** CrabTalk intentionally does not use TURN relay servers. Options:
 - Use a VPN to put both devices on the same network
@@ -315,20 +313,19 @@ rm ~/.claude/crabtalk.json
 
 | Layer | Protection |
 |-------|-----------|
-| Authentication | BetterAuth (email/password + Google OAuth) |
+| Authentication | BetterAuth email/password sessions |
 | Session management | BetterAuth session tokens with expiry |
-| Transport encryption | WebRTC DTLS (mandatory, not optional) |
-| Data routing | P2P only — signal server never sees file contents |
-| Peer isolation | Signal server scopes peers by user ID |
+| Transport encryption | libp2p QUIC encrypted streams |
+| Data routing | P2P only — rendezvous server never sees file contents |
+| Peer isolation | Rendezvous server scopes peers by user ID |
 | Excluded from sync | Auth tokens, credentials, session state |
 
-### What the signal server knows
+### What the rendezvous server knows
 
 - Your email and account info (BetterAuth)
-- Which devices are online (peer presence)
-- WebRTC signaling metadata (SDP offers/answers, ICE candidates)
+- Recently registered devices and libp2p multiaddrs
 
-### What the signal server does NOT know
+### What the rendezvous server does NOT know
 
 - Contents of any synced files
 - What's in your `.claude` directory
@@ -345,21 +342,26 @@ crabtalk/
 ├── skills/                      4 skills (setup, conflicts, status, sync-guide)
 ├── hooks/hooks.json             SessionStart auto-connect
 ├── scripts/session-start.js     Hook script
-├── mcp-server/                  Local sync engine (TypeScript)
+├── mcp-server/                  Claude-facing MCP bridge (TypeScript)
 │   └── src/
 │       ├── index.ts             MCP tool definitions + server entry
-│       ├── sync-engine.ts       Orchestrates sync logic
-│       ├── manifest.ts          File hashing and diff computation
-│       ├── watcher.ts           Chokidar file watching with batching
-│       ├── signaling.ts         WebSocket client to signal server
-│       ├── peer.ts              WebRTC peer connection manager
+│       ├── daemon-client.ts     IPC client for the Rust daemon
+│       ├── sync-engine.ts       Maps MCP tools to daemon commands
 │       ├── diff-util.ts         Unified diff generation
 │       └── types.ts             Shared type definitions
-└── server/                      Signal server (TypeScript)
+├── daemon/                      Rust libp2p sync daemon
+│   └── src/
+│       ├── main.rs              Daemon bootstrap
+│       ├── watcher.rs           File watching with batching
+│       ├── network.rs           libp2p QUIC swarm
+│       ├── sync.rs              Manifest exchange and file transfer
+│       ├── ipc.rs               MCP IPC server
+│       └── rendezvous.rs        Rendezvous API client
+└── server/                      Rendezvous server (TypeScript)
     └── src/
-        ├── index.ts             Hono HTTP server + WebSocket setup
+        ├── index.ts             Hono HTTP server
         ├── auth.ts              BetterAuth configuration
-        ├── signaling.ts         WebSocket peer management
+        ├── rendezvous.ts        Peer registration and discovery
         └── db/
             ├── schema.ts        Drizzle ORM table definitions
             └── index.ts         Neon database connection

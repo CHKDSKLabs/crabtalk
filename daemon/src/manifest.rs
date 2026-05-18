@@ -74,9 +74,7 @@ fn hash_file(path: &Path, claude_dir: &Path) -> Option<FileManifestEntry> {
         .as_millis() as u64;
 
     let relative = path.strip_prefix(claude_dir).ok()?;
-    let normalized = relative
-        .to_string_lossy()
-        .replace('\\', "/");
+    let normalized = relative.to_string_lossy().replace('\\', "/");
 
     Some(FileManifestEntry {
         path: normalized,

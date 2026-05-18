@@ -37,21 +37,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         s.manifest = initial_manifest.clone();
     }
 
+    // sync_trigger: IPC and file changes send () to trigger sync with all connected peers
+    let (sync_tx, sync_rx) = mpsc::channel::<()>(8);
+
     let file_watcher =
         watcher::FileWatcher::start(claude_dir, cfg.sync_paths.clone(), initial_manifest)?;
 
     let watcher_state = shared.clone();
+    let watcher_sync_tx = sync_tx.clone();
     let mut manifest_rx = file_watcher.manifest_rx;
     tokio::spawn(async move {
         while manifest_rx.changed().await.is_ok() {
             let new_manifest = manifest_rx.borrow_and_update().clone();
             let mut s = watcher_state.write().await;
             s.manifest = new_manifest;
+            drop(s);
+
+            match watcher_sync_tx.try_send(()) {
+                Ok(()) => {}
+                Err(mpsc::error::TrySendError::Full(_)) => {
+                    tracing::debug!("sync already queued after file change");
+                }
+                Err(mpsc::error::TrySendError::Closed(_)) => {
+                    tracing::warn!("network loop unavailable after file change");
+                }
+            }
         }
     });
-
-    // sync_trigger: IPC sends () to trigger immediate sync with all connected peers
-    let (sync_tx, sync_rx) = mpsc::channel::<()>(8);
 
     let ipc_tx = event_tx.clone();
     let ipc_cfg = cfg.clone();

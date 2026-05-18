@@ -1,5 +1,6 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use libp2p::{PeerId, Swarm};
 use tokio::sync::broadcast;
@@ -16,6 +17,28 @@ use crate::protocol::{
 use crate::state::SharedState;
 use crate::types::{FileManifestEntry, IpcEvent};
 
+fn safe_claude_path(claude_dir: &Path, path: &str) -> Option<PathBuf> {
+    if path.is_empty() || path.contains('\\') {
+        return None;
+    }
+
+    let relative = Path::new(path);
+    let mut clean = PathBuf::new();
+    for component in relative.components() {
+        match component {
+            Component::Normal(part) => clean.push(part),
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => return None,
+        }
+    }
+
+    if clean.as_os_str().is_empty() {
+        return None;
+    }
+
+    Some(claude_dir.join(clean))
+}
+
 pub struct SyncManager {
     pub config: CrabTalkConfig,
     pub claude_dir: PathBuf,
@@ -30,13 +53,21 @@ impl SyncManager {
         state: SharedState,
         event_tx: broadcast::Sender<IpcEvent>,
     ) -> Self {
-        Self { config, claude_dir, state, event_tx }
+        Self {
+            config,
+            claude_dir,
+            state,
+            event_tx,
+        }
     }
 
     pub async fn initiate_sync(&self, swarm: &mut Swarm<CrabTalkBehaviour>, peer_id: PeerId) {
         let manifest_entries: Vec<(String, FileManifestEntry)> = {
             let s = self.state.read().await;
-            s.manifest.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+            s.manifest
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect()
         };
 
         swarm
@@ -62,7 +93,9 @@ impl SyncManager {
 
         for path in &diff.conflicts {
             self.store_conflict(path, &local, &remote).await;
-            let _ = self.event_tx.send(IpcEvent::ConflictDetected { path: path.clone() });
+            let _ = self
+                .event_tx
+                .send(IpcEvent::ConflictDetected { path: path.clone() });
         }
 
         let need: Vec<String> = diff
@@ -99,7 +132,9 @@ impl SyncManager {
             None => return,
         };
 
-        let local_content = std::fs::read_to_string(self.claude_dir.join(path)).unwrap_or_default();
+        let local_content = safe_claude_path(&self.claude_dir, path)
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .unwrap_or_default();
 
         let conflict = SyncConflict {
             path: path.to_string(),
@@ -132,8 +167,9 @@ impl SyncManager {
             };
 
             if let Some(local_entry) = local_manifest.get(path) {
-                let local_content =
-                    std::fs::read_to_string(self.claude_dir.join(path)).unwrap_or_default();
+                let local_content = safe_claude_path(&self.claude_dir, path)
+                    .and_then(|p| std::fs::read_to_string(p).ok())
+                    .unwrap_or_default();
 
                 let conflict = SyncConflict {
                     path: path.clone(),
@@ -151,22 +187,26 @@ impl SyncManager {
                 s.conflicts.add(conflict);
             }
 
-            let _ = self.event_tx.send(IpcEvent::ConflictDetected { path: path.clone() });
+            let _ = self
+                .event_tx
+                .send(IpcEvent::ConflictDetected { path: path.clone() });
         }
 
-        // response.sending = files the peer is sending to us — we request them
-        for path in &response.sending {
-            swarm.behaviour_mut().file_rr.send_request(
-                &peer_id,
-                FileRequestMsg(FileRequest { path: path.clone() }),
-            );
+        // response.sending = files the peer has that we need. Conflicted paths are
+        // requested too so the conflict UI can show remote content.
+        for path in response.sending.iter().chain(response.conflicts.iter()) {
+            swarm
+                .behaviour_mut()
+                .file_rr
+                .send_request(&peer_id, FileRequestMsg(FileRequest { path: path.clone() }));
         }
 
-        // response.need = files the peer needs from us — they'll send file requests, nothing to do here
+        // response.need = files the peer needs from us; the peer requests those
+        // immediately after it sends the manifest response.
     }
 
     pub async fn handle_file_request(&self, path: &str) -> Option<FileResponseMsg> {
-        let full_path = self.claude_dir.join(path);
+        let full_path = safe_claude_path(&self.claude_dir, path)?;
         let content = tokio::fs::read(&full_path).await.ok()?;
 
         let entry = {
@@ -177,7 +217,12 @@ impl SyncManager {
         Some(FileResponseMsg { entry, content })
     }
 
-    pub async fn handle_file_response(&self, path: &str, entry: FileManifestEntry, content: Vec<u8>) {
+    pub async fn handle_file_response(
+        &self,
+        path: &str,
+        entry: FileManifestEntry,
+        content: Vec<u8>,
+    ) {
         let is_conflicted = {
             let s = self.state.read().await;
             s.conflicts.list(Some(path)).len() > 0
@@ -191,7 +236,13 @@ impl SyncManager {
             return;
         }
 
-        let full_path = self.claude_dir.join(path);
+        let full_path = match safe_claude_path(&self.claude_dir, path) {
+            Some(p) => p,
+            None => {
+                warn!(%path, "refusing to write unsafe sync path");
+                return;
+            }
+        };
 
         if let Some(parent) = full_path.parent() {
             if let Err(e) = tokio::fs::create_dir_all(parent).await {
@@ -211,10 +262,21 @@ impl SyncManager {
         }
 
         info!(%path, "file received and written");
-        let _ = self.event_tx.send(IpcEvent::FileReceived { path: path.to_string() });
+        let _ = self.event_tx.send(IpcEvent::FileReceived {
+            path: path.to_string(),
+        });
     }
 
     pub async fn finish_sync(&self, synced: u32, conflicts: u32) {
-        let _ = self.event_tx.send(IpcEvent::SyncComplete { synced, conflicts });
+        {
+            let mut s = self.state.write().await;
+            s.last_sync_time = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .ok()
+                .map(|d| d.as_millis() as u64);
+        }
+        let _ = self
+            .event_tx
+            .send(IpcEvent::SyncComplete { synced, conflicts });
     }
 }
